@@ -49,8 +49,10 @@ endif
 DEFINES = -DSA -DSA_SIZE=$(SA_SIZE) -DMODEL=$(MODEL) -DACTIVATION_BITS=$(ACTIVATION_BITS) -DWEIGHT_BITS=$(WEIGHT_BITS) -DACTIVATION_FP=$(ACTIVATION_FP) -DWEIGHT_FP=$(WEIGHT_FP) -DBWMA -DCORE_NUM=1 $(SW_DEFINE)
 
 ARM_CXX = aarch64-linux-gnu-g++
-LIBS = -lstdc++fs
-CFLAGS = -fopenmp -O2 -Wall $(DEFINES)
+# LIBS = -lstdc++fs
+# CFLAGS = -fopenmp -O2 -Wall $(DEFINES)
+LIBS = -lstdc++ -lstdc++fs
+CFLAGS = -fopenmp -O2 -Wall -std=c++17 $(DEFINES)
 
 TOP_OBJ_DIR = obj
 

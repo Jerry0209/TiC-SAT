@@ -6,6 +6,36 @@
 #include "transformer_layers/sparse_rep.h"
 #include "accelerator/smm_gem.h"
 
+
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <random>
+
+// --- 伪造函数开始：绕过缺失的 dataFunctions.h ---
+void fill_kernel(uint32_t* tensor, int size) {
+    for(int i=0; i<size; ++i) tensor[i] = rand();
+}
+
+void saveWeight(int n, int type, int size, uint32_t* data, int sparsity, std::string dir) {
+    // 暂时留空，不保存权重也不影响推理执行
+}
+
+void fill_sparse_weight(uint32_t* kernel, uint32_t* flag, int d_model, int d_q_bus, int sparsity) {
+    int size = d_model * d_q_bus;
+    for(int i=0; i<size; ++i) kernel[i] = rand();
+    // 简单填充 flag
+}
+
+void append_flags(uint32_t* flag, int size) {
+    // 留空
+}
+
+// void dense2interleavedMetaData(uint32_t* weight, int d1, int d2) {
+//     // 留空，因为我们现在跑纯软件 (SW) 模式，可能不需要复杂的元数据转换
+// }
+// --- 伪造函数结束 ---
+
 void inference(int sparsityPercentageQVK, int sparsityCondense, int sparsityPercentageFF0, int sparsityPercentageFF1, Format sparseFormatQVK, Format sparseFormatCondense, Format sparseFormatFF0, Format sparseFormatFF1){
     uint32_t hidden_flag ;
     hidden_flag = 0xAAAAAAAA;
@@ -93,10 +123,11 @@ void inference(int sparsityPercentageQVK, int sparsityCondense, int sparsityPerc
         fill_sparse_weight(query_kernel[n], query_flag[n], D_MODEL, D_Q / W_PER_BUS, sparsityPercentageQVK);
         fill_sparse_weight(key_kernel[n], key_flag[n], D_MODEL, D_Q / W_PER_BUS, sparsityPercentageQVK);
         fill_sparse_weight(value_kernel[n], value_flag[n], D_MODEL, D_Q / W_PER_BUS, sparsityPercentageQVK);
-        if (!std::filesystem::exists(dir_name)) {
-            std::cout << "Creating directory: " << dir_name << std::endl;
-            std::filesystem::create_directory(dir_name);
-        }
+        // Comment those lines temporarily
+        // if (!std::filesystem::exists(dir_name)) {
+        //     std::cout << "Creating directory: " << dir_name << std::endl;
+        //     std::filesystem::create_directory(dir_name);
+        // }
 
         saveWeight(n, 0, head_qkv_size, query_kernel[n], sparsityPercentageQVK, dir_name);
         saveWeight(n, 1, head_qkv_size, key_kernel[n], sparsityPercentageQVK, dir_name);
@@ -347,7 +378,18 @@ int main(int argc, char** argv) {
       }
 #endif
 
+        std::cout << "Starting inference..." << std::endl;
+        
+        // Profiling Inference
+        system("m5 resetstats");
+
         inference(sparsityPercentageQVK, sparsityCondense, sparsityPercentageFF0, sparsityPercentageFF1, sparseFormatQVK, sparseFormatCondense, sparseFormatFF0, sparseFormatFF1);
+
+
+        system("m5 dumpresetstats"); 
+        
+        std::cout << "Inference finished." << std::endl;
+
 
         // if (sparsity)
         //     inference(sparsity, Format::INTERLEAVED);
