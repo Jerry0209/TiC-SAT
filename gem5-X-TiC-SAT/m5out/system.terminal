@@ -1,0 +1,334 @@
+[    0.000000] Booting Linux on physical CPU 0x0
+[    0.000000] Linux version 4.14.0+ (wsimon@ubuntu) (gcc version 7.2.0 (Ubuntu/Linaro 7.2.0-6ubuntu1)) #1 SMP PREEMPT Fri Jul 27 00:47:28 CEST 2018
+[    0.000000] Boot CPU: AArch64 Processor [410fc0f0]
+[    0.000000] Machine model: V2P-AARCH64
+[    0.000000] Memory limited to 4096MB
+[    0.000000] cma: Reserved 16 MiB at 0x00000000ff000000
+[    0.000000] On node 0 totalpages: 1048576
+[    0.000000]   DMA zone: 8192 pages used for memmap
+[    0.000000]   DMA zone: 0 pages reserved
+[    0.000000]   DMA zone: 524288 pages, LIFO batch:31
+[    0.000000]   Normal zone: 8192 pages used for memmap
+[    0.000000]   Normal zone: 524288 pages, LIFO batch:31
+[    0.000000] random: fast init done
+[    0.000000] percpu: Embedded 21 pages/cpu @ffffffc0fffdb000 s45464 r8192 d32360 u86016
+[    0.000000] pcpu-alloc: s45464 r8192 d32360 u86016 alloc=21*4096
+[    0.000000] pcpu-alloc: [0] 0 
+[    0.000000] Detected PIPT I-cache on CPU0
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 1032192
+[    0.000000] Kernel command line: earlyprintk=pl011,0x1c090000 console=ttyAMA0 lpj=19988480 norandmaps rw loglevel=8 mem=4GB root=/dev/sda1
+[    0.000000] PID hash table entries: 4096 (order: 3, 32768 bytes)
+[    0.000000] Dentry cache hash table entries: 524288 (order: 10, 4194304 bytes)
+[    0.000000] Inode-cache hash table entries: 262144 (order: 9, 2097152 bytes)
+[    0.000000] software IO TLB [mem 0xfafff000-0xfefff000] (64MB) mapped at [ffffffc07afff000-ffffffc07effefff]
+[    0.000000] Memory: 4030688K/4194304K available (6078K kernel code, 476K rwdata, 2060K rodata, 384K init, 264K bss, 147232K reserved, 16384K cma-reserved)
+[    0.000000] Virtual kernel memory layout:
+[    0.000000]     modules : 0xffffff8000000000 - 0xffffff8008000000   (   128 MB)
+[    0.000000]     vmalloc : 0xffffff8008000000 - 0xffffffbebfff0000   (   250 GB)
+[    0.000000]       .text : 0xffffff8008080000 - 0xffffff8008670000   (  6080 KB)
+[    0.000000]     .rodata : 0xffffff8008670000 - 0xffffff8008880000   (  2112 KB)
+[    0.000000]       .init : 0xffffff8008880000 - 0xffffff80088e0000   (   384 KB)
+[    0.000000]       .data : 0xffffff80088e0000 - 0xffffff8008957008   (   477 KB)
+[    0.000000]        .bss : 0xffffff8008957008 - 0xffffff8008999108   (   265 KB)
+[    0.000000]     fixed   : 0xffffffbefe7fd000 - 0xffffffbefec00000   (  4108 KB)
+[    0.000000]     PCI I/O : 0xffffffbefee00000 - 0xffffffbeffe00000   (    16 MB)
+[    0.000000]     vmemmap : 0xffffffbf00000000 - 0xffffffc000000000   (     4 GB maximum)
+[    0.000000]               0xffffffbf00000000 - 0xffffffbf04000000   (    64 MB actual)
+[    0.000000]     memory  : 0xffffffc000000000 - 0xffffffc100000000   (  4096 MB)
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=1, Nodes=1
+[    0.000000] Preemptible hierarchical RCU implementation.
+[    0.000000] 	RCU restricting CPUs from NR_CPUS=256 to nr_cpu_ids=1.
+[    0.000000] 	Tasks RCU enabled.
+[    0.000000] RCU: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=1
+[    0.000000] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    0.000000] GIC: Detected gem5 extensions
+[    0.000000] arch_timer: cp15 timer(s) running at 25.16MHz (virt).
+[    0.000000] clocksource: arch_sys_counter: mask: 0xffffffffffffff max_cycles: 0x5cdd39714, max_idle_ns: 440795202620 ns
+[    0.000002] sched_clock: 56 bits at 25MHz, resolution 39ns, wraps every 4398046511084ns
+[    0.000128] Console: colour dummy device 80x25
+[    0.000139] Calibrating delay loop (skipped) preset value.. 9994.24 BogoMIPS (lpj=19988480)
+[    0.000149] pid_max: default: 32768 minimum: 301
+[    0.000212] Mount-cache hash table entries: 8192 (order: 4, 65536 bytes)
+[    0.000225] Mountpoint-cache hash table entries: 8192 (order: 4, 65536 bytes)
+[    0.016017] ASID allocator initialised with 256 entries
+[    0.024012] Hierarchical SRCU implementation.
+[    0.040034] smp: Bringing up secondary CPUs ...
+[    0.040041] smp: Brought up 1 node, 1 CPU
+[    0.040048] SMP: Total of 1 processors activated.
+[    0.040055] CPU features: detected feature: 32-bit EL0 Support
+[    0.040105] CPU: All CPU(s) started at EL1
+[    0.040656] devtmpfs: initialized
+[    0.041787] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645041785100000 ns
+[    0.041796] futex hash table entries: 256 (order: 3, 32768 bytes)
+[    0.043073] NET: Registered protocol family 16
+[    0.072740] cpuidle: using governor menu
+[    0.072897] vdso: 2 pages (1 code @ ffffff8008676000, 1 data @ ffffff80088e4000)
+[    0.072906] hw-breakpoint: found 2 breakpoint and 2 watchpoint registers.
+[    0.073542] DMA: preallocated 256 KiB pool for atomic allocations
+[    0.073549] Serial: AMBA PL011 UART driver
+[    0.074393] 1c090000.uart: ttyAMA0 at MMIO 0x1c090000 (irq = 7, base_baud = 0) is a PL011 rev3
+[    0.074888] console [ttyAMA0] enabled
+[    0.092355] HugeTLB registered 2.00 MiB page size, pre-allocated 0 pages
+[    0.100344] vgaarb: loaded
+[    0.100493] SCSI subsystem initialized
+[    0.104139] libata version 3.00 loaded.
+[    0.104259] usbcore: registered new interface driver usbfs
+[    0.104296] usbcore: registered new interface driver hub
+[    0.104326] usbcore: registered new device driver usb
+[    0.104387] pps_core: LinuxPPS API ver. 1 registered
+[    0.104397] pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+[    0.104419] PTP clock support registered
+[    0.105314] clocksource: Switched to clocksource arch_sys_counter
+[    0.111214] NET: Registered protocol family 2
+[    0.111512] TCP established hash table entries: 32768 (order: 6, 262144 bytes)
+[    0.111856] TCP bind hash table entries: 32768 (order: 7, 524288 bytes)
+[    0.112229] TCP: Hash tables configured (established 32768 bind 32768)
+[    0.112268] UDP hash table entries: 2048 (order: 4, 65536 bytes)
+[    0.112339] UDP-Lite hash table entries: 2048 (order: 4, 65536 bytes)
+[    0.112466] NET: Registered protocol family 1
+[    0.123878] RPC: Registered named UNIX socket transport module.
+[    0.123887] RPC: Registered udp transport module.
+[    0.123896] RPC: Registered tcp transport module.
+[    0.123905] RPC: Registered tcp NFSv4.1 backchannel transport module.
+[    0.123915] PCI: CLS 0 bytes, default 128
+[    0.124225] kvm [1]: HYP mode not available
+[    0.124894] workingset: timestamp_bits=62 max_order=20 bucket_order=0
+[    0.133646] fuse init (API version 7.26)
+[    0.134011] 9p: Installing v9fs 9p2000 file system support
+[    0.134883] io scheduler noop registered
+[    0.135029] io scheduler cfq registered (default)
+[    0.135040] io scheduler mq-deadline registered
+[    0.135050] io scheduler kyber registered
+[    0.135103] atomic64_test: passed
+[    0.135569] OF: PCI: host bridge /pci ranges:
+[    0.135581] OF: PCI:   No bus range found for /pci, using [bus 00-ff]
+[    0.135600] OF: PCI:    IO 0x2f000000..0x2f00ffff -> 0x00000000
+[    0.135615] OF: PCI:   MEM 0x40000000..0x7fffffff -> 0x40000000
+[    0.135648] pci-host-generic 30000000.pci: ECAM at [mem 0x30000000-0x3fffffff] for [bus 00-ff]
+[    0.135730] pci-host-generic 30000000.pci: PCI host bridge to bus 0000:00
+[    0.135744] pci_bus 0000:00: root bus resource [bus 00-ff]
+[    0.135758] pci_bus 0000:00: root bus resource [io  0x0000-0xffff]
+[    0.135772] pci_bus 0000:00: root bus resource [mem 0x40000000-0x7fffffff]
+[    0.135785] pci_bus 0000:00: scanning bus
+[    0.135803] pci 0000:00:00.0: [1af4:1000] type 00 class 0xff0000
+[    0.135823] pci 0000:00:00.0: reg 0x10: [io  0x0000-0x001f]
+[    0.135849] pci 0000:00:00.0: reg 0x30: [mem 0x00000000-0x000007ff pref]
+[    0.135949] pci 0000:00:01.0: [8086:1075] type 00 class 0x020000
+[    0.135965] pci 0000:00:01.0: calling quirk_f0_vpd_link+0x0/0x78
+[    0.135983] pci 0000:00:01.0: reg 0x10: [mem 0x00000000-0x0001ffff]
+[    0.136010] pci 0000:00:01.0: reg 0x30: [mem 0x00000000-0x000007ff pref]
+[    0.136110] pci 0000:00:02.0: [8086:7111] type 00 class 0x010185
+[    0.136129] pci 0000:00:02.0: reg 0x10: [io  0x0000-0x0007]
+[    0.136145] pci 0000:00:02.0: reg 0x14: [io  0x0000-0x0003]
+[    0.136160] pci 0000:00:02.0: reg 0x18: [io  0x0000-0x0007]
+[    0.136176] pci 0000:00:02.0: reg 0x1c: [io  0x0000-0x0003]
+[    0.136191] pci 0000:00:02.0: reg 0x20: [io  0x0000-0x000f]
+[    0.136209] pci 0000:00:02.0: reg 0x30: [mem 0x00000000-0x000007ff pref]
+[    0.136320] pci_bus 0000:00: fixups for bus
+[    0.136331] pci_bus 0000:00: bus scan returning with max=00
+[    0.136350] pci 0000:00:01.0: BAR 0: assigned [mem 0x40000000-0x4001ffff]
+[    0.136366] pci 0000:00:00.0: BAR 6: assigned [mem 0x40020000-0x400207ff pref]
+[    0.136382] pci 0000:00:01.0: BAR 6: assigned [mem 0x40020800-0x40020fff pref]
+[    0.136398] pci 0000:00:02.0: BAR 6: assigned [mem 0x40021000-0x400217ff pref]
+[    0.136413] pci 0000:00:00.0: BAR 0: assigned [io  0x1000-0x101f]
+[    0.136429] pci 0000:00:02.0: BAR 4: assigned [io  0x1020-0x102f]
+[    0.136445] pci 0000:00:02.0: BAR 0: assigned [io  0x1030-0x1037]
+[    0.136460] pci 0000:00:02.0: BAR 2: assigned [io  0x1038-0x103f]
+[    0.136476] pci 0000:00:02.0: BAR 1: assigned [io  0x1040-0x1043]
+[    0.136491] pci 0000:00:02.0: BAR 3: assigned [io  0x1044-0x1047]
+[    0.136522] pci 0000:00:01.0: calling quirk_e100_interrupt+0x0/0x1d0
+[    0.137155] virtio-pci 0000:00:00.0: assign IRQ: got 12
+[    0.137170] virtio-pci 0000:00:00.0: enabling device (0000 -> 0001)
+[    0.137185] virtio-pci 0000:00:00.0: virtio_pci: leaving for legacy driver
+[    0.137200] virtio-pci 0000:00:00.0: enabling bus mastering
+[    0.139730] Serial: 8250/16550 driver, 4 ports, IRQ sharing disabled
+[    0.143607] ata_piix 0000:00:02.0: assign IRQ: got 13
+[    0.143620] ata_piix 0000:00:02.0: version 2.13
+[    0.143634] ata_piix 0000:00:02.0: enabling device (0000 -> 0001)
+[    0.143677] ata_piix 0000:00:02.0: enabling bus mastering
+[    0.145053] scsi host0: ata_piix
+[    0.149282] scsi host1: ata_piix
+[    0.149389] ata1: PATA max UDMA/33 cmd 0x1030 ctl 0x1040 bmdma 0x1020 irq 13
+[    0.149402] ata2: PATA max UDMA/33 cmd 0x1038 ctl 0x1044 bmdma 0x1028 irq 13
+[    0.149747] libphy: Fixed MDIO Bus: probed
+[    0.149757] e1000: Intel(R) PRO/1000 Network Driver - version 7.3.21-k8-NAPI
+[    0.149769] e1000: Copyright (c) 1999-2006 Intel Corporation.
+[    0.149826] e1000 0000:00:01.0: assign IRQ: got 14
+[    0.149841] e1000 0000:00:01.0: enabling device (0000 -> 0002)
+[    0.149856] e1000 0000:00:01.0: enabling bus mastering
+[    0.308867] ata1.00: ATA-7: M5 IDE Disk, , max UDMA/66
+[    0.308879] ata1.00: 62914560 sectors, multi 0: LBA 
+[    0.308930] ata1.00: configured for UDMA/33
+[    0.309042] scsi 0:0:0:0: Direct-Access     ATA      M5 IDE Disk      n/a  PQ: 0 ANSI: 5
+[    0.309555] sd 0:0:0:0: [sda] 62914560 512-byte logical blocks: (32.2 GB/30.0 GiB)
+[    0.309584] sd 0:0:0:0: [sda] Write Protect is off
+[    0.309596] sd 0:0:0:0: [sda] Mode Sense: 00 3a 00 00
+[    0.309641] sd 0:0:0:0: [sda] Write cache: disabled, read cache: enabled, doesn't support DPO or FUA
+[    0.309928] sd 0:0:0:0: Attached scsi generic sg0 type 0
+[    0.310170]  sda: sda1
+[    0.310649] sd 0:0:0:0: [sda] Attached SCSI disk
+[    0.417967] e1000 0000:00:01.0 eth0: (PCI:33MHz:32-bit) 00:90:00:00:00:01
+[    0.417983] e1000 0000:00:01.0 eth0: Intel(R) PRO/1000 Network Connection
+[    0.418096] e1000e: Intel(R) PRO/1000 Network Driver - 3.2.6-k
+[    0.418106] e1000e: Copyright(c) 1999 - 2015 Intel Corporation.
+[    0.418151] igb: Intel(R) Gigabit Ethernet Network Driver - version 5.4.0-k
+[    0.418163] igb: Copyright (c) 2007-2014 Intel Corporation.
+[    0.418205] ixgbe: Intel(R) 10 Gigabit PCI Express Network Driver - version 5.1.0-k
+[    0.418217] ixgbe: Copyright (c) 1999-2016 Intel Corporation.
+[    0.422494] ixgbevf: Intel(R) 10 Gigabit PCI Express Virtual Function Network Driver - version 4.1.0-k
+[    0.422507] ixgbevf: Copyright (c) 2009 - 2015 Intel Corporation.
+[    0.426606] i40e: Intel(R) Ethernet Connection XL710 Network Driver - version 2.1.14-k
+[    0.426619] i40e: Copyright (c) 2013 - 2014 Intel Corporation.
+[    0.430749] ixgb: Intel(R) PRO/10GbE Network Driver - version 1.0.135-k2-NAPI
+[    0.430760] ixgb: Copyright (c) 1999-2008 Intel Corporation.
+[    0.430801] i40evf: Intel(R) 40-10 Gigabit Virtual Function Network Driver - version 3.0.0-k
+[    0.430813] Copyright (c) 2013 - 2015 Intel Corporation.
+[    0.435155] usbcore: registered new interface driver usb-storage
+[    0.435746] mousedev: PS/2 mouse device common for all mice
+[    0.435857] IR NEC protocol handler initialized
+[    0.435867] IR RC5(x/sz) protocol handler initialized
+[    0.435877] IR RC6 protocol handler initialized
+[    0.435887] IR JVC protocol handler initialized
+[    0.435896] IR Sony protocol handler initialized
+[    0.435906] IR SANYO protocol handler initialized
+[    0.435916] IR Sharp protocol handler initialized
+[    0.435926] IR MCE Keyboard/mouse protocol handler initialized
+[    0.435936] IR XMP protocol handler initialized
+[    0.436004] gem5_energy_ctrl_mc: gem5_mc_init: No energy controller found
+[    0.436420] usbcore: registered new interface driver usbhid
+[    0.436431] usbhid: USB HID core driver
+[    0.436518] NET: Registered protocol family 17
+[    0.436548] 9pnet: Installing 9P2000 support
+[    0.540995] input: AT Raw Set 2 keyboard as /devices/platform/1c060000.kmi/serio0/input/input0
+[    0.953016] input: PS/2 Generic Mouse as /devices/platform/1c070000.kmi/serio1/input/input2
+[    0.953383] EXT4-fs (sda1): couldn't mount as ext3 due to feature incompatibilities
+[    0.958888] EXT4-fs (sda1): warning: mounting unchecked fs, running e2fsck is recommended
+[    0.959675] EXT4-fs (sda1): mounted filesystem without journal. Opts: (null)
+[    0.959695] VFS: Mounted root (ext4 filesystem) on device 8:1.
+[    0.960879] devtmpfs: mounted
+[    0.960974] Freeing unused kernel memory: 384K
+[    0.980938] systemd[1]: System time before build time, advancing clock.
+[    0.983502] systemd[1]: Failed to insert module 'autofs4': No such file or directory
+[    0.989459] systemd[1]: systemd 229 running in system mode. (+PAM +AUDIT +SELINUX +IMA +APPARMOR +SMACK +SYSVINIT +UTMP +LIBCRYPTSETUP +GCRYPT +GNUTLS +ACL +XZ -LZ4 +SECCOMP +BLKID +ELFUTILS +KMOD -IDN)
+[    0.989684] systemd[1]: Detected architecture arm64.
+
+Welcome to [1mUbuntu 16.04.1 LTS[0m!
+
+[    0.991959] systemd[1]: Set hostname to <localhost.localdomain>.
+[    0.995359] systemd[1]: Initializing machine ID from D-Bus machine ID.
+[    1.076279] systemd[1]: Reached target Swap.
+[[0;32m  OK  [0m] Reached target Swap.
+[    1.076561] systemd[1]: Listening on Journal Socket.
+[[0;32m  OK  [0m] Listening on Journal Socket.
+[    1.079139] systemd[1]: Listening on /dev/initctl Compatibility Named Pipe.
+[[0;32m  OK  [0m] Listening on /dev/initctl Compatibility Named Pipe.
+[    1.079323] systemd[1]: Started Forward Password Requests to Wall Directory Watch.
+[[0;32m  OK  [0m] Started Forward Password Requests to Wall Directory Watch.
+[    1.079455] systemd[1]: Listening on Journal Socket (/dev/log).
+[[0;32m  OK  [0m] Listening on Journal Socket (/dev/log).
+[    1.079756] systemd[1]: Created slice User and Session Slice.
+[[0;32m  OK  [0m] Created slice User and Session Slice.
+[[0;32m  OK  [0m] Reached target Remote File Systems (Pre).
+[[0;32m  OK  [0m] Reached target Remote File Systems.
+[[0;32m  OK  [0m] Listening on udev Kernel Socket.
+[[0;32m  OK  [0m] Listening on udev Control Socket.
+[[0;32m  OK  [0m] Created slice System Slice.
+[[0;32m  OK  [0m] Created slice system-serial\x2dgetty.slice.
+         Mounting POSIX Message Queue File System...
+[[0;32m  OK  [0m] Created slice system-getty.slice.
+         Starting Create Static Device Nodes in /dev...
+         Starting Load Kernel Modules...
+         Starting Remount Root and Kernel File Systems...
+[[0;32m  OK  [0m] Reached target Slices.
+         Mounting Debug File System...
+[[0;32m  OK  [0m] Reached target Encrypted Volumes.
+         Starting Journal Service...
+         Mounting Huge Pages File System...
+[[0;32m  OK  [0m] Started Dispatch Password Requests to Console Directory Watch.
+[[0;32m  OK  [0m] Reached target Paths.
+[[0;32m  OK  [0m] Mounted POSIX Message Queue File System.
+[[0;32m  OK  [0m] Mounted Huge Pages File System.
+[[0;32m  OK  [0m] Mounted Debug File System.
+[[0;32m  OK  [0m] Started Load Kernel Modules.
+[[0;32m  OK  [0m] Started Remount Root and Kernel File Systems.
+[[0;32m  OK  [0m] Started Create Static Device Nodes in /dev.
+         Starting udev Kernel Device Manager...
+         Starting Load/Save Random Seed...
+         Starting udev Coldplug all Devices...
+[[0;32m  OK  [0m] Reached target Local File Systems (Pre).
+[[0;32m  OK  [0m] Reached target Local File Systems.
+         Starting LSB: AppArmor initialization...
+         Mounting FUSE Control File System...
+         Starting Apply Kernel Variables...
+[[0;32m  OK  [0m] Started Journal Service.
+         Starting Flush Journal to Persistent Storage...
+[[0;32m  OK  [0m] Mounted FUSE Control File System.
+[[0;32m  OK  [0m] Started Load/Save Random Seed.
+[[0;32m  OK  [0m] Started Apply Kernel Variables.
+[[0;32m  OK  [0m] Started udev Kernel Device Manager.
+[[0;32m  OK  [0m] Started Flush Journal to Persistent Storage.
+         Starting Create Volatile Files and Directories...
+[[0;32m  OK  [0m] Started LSB: AppArmor initialization.
+         Starting Raise network interfaces...
+[[0;32m  OK  [0m] Started Create Volatile Files and Directories.
+         Starting Update UTMP about System Boot/Shutdown...
+         Starting Network Time Synchronization...
+[[0;32m  OK  [0m] Started Update UTMP about System Boot/Shutdown.
+[[0;32m  OK  [0m] Started Network Time Synchronization.
+[[0;32m  OK  [0m] Reached target System Time Synchronized.
+[[0;32m  OK  [0m] Started Raise network interfaces.
+[[0;32m  OK  [0m] Reached target Network.
+[[0;32m  OK  [0m] Started udev Coldplug all Devices.
+[[0;32m  OK  [0m] Reached target System Initialization.
+[[0;32m  OK  [0m] Listening on UUID daemon activation socket.
+[[0;32m  OK  [0m] Started Daily Cleanup of Temporary Directories.
+[[0;32m  OK  [0m] Started Daily apt activities.
+[[0;32m  OK  [0m] Reached target Timers.
+[[0;32m  OK  [0m] Listening on D-Bus System Message Bus Socket.
+[[0;32m  OK  [0m] Reached target Sockets.
+[[0;32m  OK  [0m] Reached target Basic System.
+         Starting Permit User Sessions...
+[[0;32m  OK  [0m] Started Cgroup management daemon.
+         Starting /etc/rc.local Compatibility...
+         Starting LSB: Set the CPU Frequency Scaling governor to "ondemand"...
+         Starting LXC network bridge setup...
+[[0;32m  OK  [0m] Started FUSE filesystem for LXC.
+         Starting Login Service...
+[[0;32m  OK  [0m] Started D-Bus System Message Bus.
+[[0;32m  OK  [0m] Started Permit User Sessions.
+[[0;32m  OK  [0m] Started /etc/rc.local Compatibility.
+[[0;32m  OK  [0m] Found device /dev/ttyAMA0.
+[[0;1;31mFAILED[0m] Failed to start LXC network bridge setup.
+See 'systemctl status lxc-net.service' for details.
+[[0;32m  OK  [0m] Started Login Service.
+         Starting LXC Container Initialization and Autoboot Code...
+[[0;32m  OK  [0m] Started Serial Getty on ttyAMA0.
+[[0;32m  OK  [0m] Started Getty on tty1.
+[[0;32m  OK  [0m] Reached target Login Prompts.
+[[0;32m  OK  [0m] Started LSB: Set the CPU Frequency Scaling governor to "ondemand".
+
+Ubuntu 16.04.1 LTS localhost.localdomain ttyAMA0
+
+localhost login: root (automatic login)
+
+Welcome to Ubuntu 16.04.1 LTS (GNU/Linux 4.14.0+ aarch64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+The programs included with the Ubuntu system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Ubuntu comes with ABSOLUTELY NO WARRANTY, to the extent permitted by
+applicable law.
+
+root@localhost:~# mount -t 9p -o trans=virtio,version=9p2000.L,aname=/workspace/ sim-shared gem5 /mnt
+root@localhost:~# 
+root@localhost:~# cd /mnt
+root@localhost:/mnt# 
+root@localhost:/mnt# ./test_model_16_act_fp32_w_fp32_SW.exe 0 0 0 0
+Illegal instruction
+root@localhost:/mnt# 
+root@localhost:/mnt# 

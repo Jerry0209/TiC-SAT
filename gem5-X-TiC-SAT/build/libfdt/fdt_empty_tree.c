@@ -1,0 +1,1 @@
+/workspace/gem5-X-TiC-SAT/ext/libfdt/fdt_empty_tree.c

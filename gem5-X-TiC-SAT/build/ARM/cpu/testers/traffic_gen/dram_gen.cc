@@ -1,0 +1,1 @@
+/workspace/gem5-X-TiC-SAT/src/cpu/testers/traffic_gen/dram_gen.cc

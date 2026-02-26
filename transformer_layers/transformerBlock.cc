@@ -40,39 +40,39 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t *input, uint32_t *o
     system("m5 resetstats");
     for (int n=0; n<num_heads_; n++){
         std::cout << "Head : " << n << std::endl;
-        selfatten[n]->compute(seq_len, input, multihead_out + n * (seq_len * head_hidden_size_ >> 2));
+        // selfatten[n]->compute(seq_len, input, multihead_out + n * (seq_len * head_hidden_size_ >> 2));
     }
 
 #ifndef BWMA
-    Transpose::multihead_transpose(multihead_out, multihead_out_reshape,
-                                   seq_len, head_hidden_size_ >> 2, num_heads_);
-    multihead_out = multihead_out_reshape;
+    // Transpose::multihead_transpose(multihead_out, multihead_out_reshape,
+    //                                seq_len, head_hidden_size_ >> 2, num_heads_);
+    // multihead_out = multihead_out_reshape;
 #endif
 
     std::cout << "Condense"  << std::endl;
-    condense->compute(seq_len, multihead_out, condense_out);
+    // condense->compute(seq_len, multihead_out, condense_out);
 
 
     std::cout << "Add Norm"  << std::endl;
 #ifdef BWMA
-    addNorm->computeRearranged(input, condense_out);
+    // addNorm->computeRearranged(input, condense_out);
 #else
-    addNorm->compute(input, condense_out);
+    // addNorm->compute(input, condense_out);
 #endif
 
     system("m5 dumpresetstats");
 
     std::cout << "Feed Forward 0"  << std::endl;
-    feedForward0->compute(seq_len, condense_out, intermediateFF);
+    // feedForward0->compute(seq_len, condense_out, intermediateFF);
 
     std::cout << "Feed Forward 1"  << std::endl;
-    feedForward1->compute(seq_len, intermediateFF, output);
+    // feedForward1->compute(seq_len, intermediateFF, output);
 
     std::cout << "Add Norm"  << std::endl;
 #ifdef BWMA
     addNorm->computeRearranged(condense_out, output);
 #else
-    addNorm->compute(condense_out, output);
+    // addNorm->compute(condense_out, output);
 #endif
     system("m5 dumpresetstats");
 

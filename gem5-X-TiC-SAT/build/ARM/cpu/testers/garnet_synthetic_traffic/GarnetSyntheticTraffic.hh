@@ -1,0 +1,1 @@
+/workspace/gem5-X-TiC-SAT/src/cpu/testers/garnet_synthetic_traffic/GarnetSyntheticTraffic.hh

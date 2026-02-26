@@ -1,0 +1,1 @@
+/workspace/gem5-X-TiC-SAT/src/arch/arm/tracers/tarmac_record_v8.cc
