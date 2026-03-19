@@ -2,6 +2,7 @@
 //#include"gtest/gtest.h"
 #include "transformer.h"
 #include "accelerator/smm_gem.h"
+#include <algorithm>
 #include <fstream>
 
 #ifndef RELOAD_WEIGHT
@@ -69,6 +70,37 @@ void loadWeight(int n_head, int qkv, int size, uint32_t *array, const std::strin
     }
 }
 
+// Jerry: print the output
+void printOutputPreview(const uint32_t *out, int size) {
+    int preview = std::min(size, 8);
+    std::cout << "Output preview (first " << preview << " packed words):" << std::endl;
+    for (int i = 0; i < preview; i++) {
+        std::cout << "out[" << i << "] = " << out[i] << " -> [";
+        for (int j = 0; j < 4; j++) {
+            int8_t value = static_cast<int8_t>((out[i] >> (8 * j)) & 0xFF);
+            std::cout << static_cast<int>(value);
+            if (j != 3) {
+                std::cout << ", ";
+            }
+        }
+        std::cout << "]" << std::endl;
+    }
+}
+
+// Jerry: save the output
+void saveOutput(int size, const uint32_t *array, const std::string &dir_name) {
+    std::string filename = dir_name + "/output.bin";
+    std::ofstream fout(filename);
+    if (fout.is_open()) {
+        for (int i = 0; i < size; i++) {
+            fout << array[i] << " ";
+        }
+        fout.close();
+    } else {
+        std::cout << filename + " Not saved" << std::endl;
+    }
+}
+
 void test() {
     std::cout << "Welcome to TiC-SAT" << std::endl;
 #ifdef BWMA
@@ -77,113 +109,119 @@ void test() {
     std::cout<<"RWMA method" << std::endl;
 #endif
 
-//     // The directory where the weights are saved
-//     // Change this to the directory where you want to save/load the weights
-//     std::string dir_name = "/path/to/weight/directory";
+    // The directory where the weights and output are saved
+    std::string dir_name = "/home/thu/TiC-SAT/weights";
+#ifndef RELOAD_WEIGHT
+    std::filesystem::create_directories(dir_name);
+#endif
+
 
     uint32_t *tensor_in = new uint32_t[D_SEQ * D_MODEL >> 2];
-// #ifdef RELOAD_WEIGHT
-//     // Load the tensor input from file
-//     // We assign -1 and -1 to n_head and qkv to indicate that we are not loading the weight
-//     loadWeight(-1, -1, D_SEQ * D_MODEL >> 2, tensor_in, dir_name);
-// #else
-//     fill_kernel(tensor_in, D_SEQ * D_MODEL >> 2);
-//     // Save the tensor input to file
-//     // We assign -1 and -1 to n_head and qkv to indicate that we are not saving the weight
-//     saveWeight(-1, -1, D_SEQ * D_MODEL >> 2, tensor_in, dir_name);
-// #endif
+#ifdef RELOAD_WEIGHT
+    // Load the tensor input from file
+    // We assign -1 and -1 to n_head and qkv to indicate that we are not loading the weight
+    loadWeight(-1, -1, D_SEQ * D_MODEL >> 2, tensor_in, dir_name);
+#else
+    fill_kernel(tensor_in, D_SEQ * D_MODEL >> 2);
+    // Save the tensor input to file
+    // We assign -1 and -1 to n_head and qkv to indicate that we are not saving the weight
+    saveWeight(-1, -1, D_SEQ * D_MODEL >> 2, tensor_in, dir_name);
+#endif
 
-// #ifndef BWMA
-//     uint32_t tensorInRowWise[D_SEQ * D_MODEL >> 2];
-//     // By default, the saved tensor is in block-wise format
-//     // We need to convert it to row-wise format
-//     blockWise2RowWise(tensor_in, tensorInRowWise, D_SEQ, D_MODEL >> 2);
-//     tensor_in = tensorInRowWise;
-// #endif
+#ifndef BWMA
+    uint32_t tensorInRowWise[D_SEQ * D_MODEL >> 2];
+    // By default, the saved tensor is in block-wise format
+    // We need to convert it to row-wise format
+    blockWise2RowWise(tensor_in, tensorInRowWise, D_SEQ, D_MODEL >> 2);
+    tensor_in = tensorInRowWise;
+#endif
 
     uint32_t *out = new uint32_t[D_SEQ * D_MODEL >> 2]();
     uint32_t *weightVec[3 * NUM_HEAD + 3];
-//     int head_qkv_size = D_Q * D_MODEL >> 2;
+    int head_qkv_size = D_Q * D_MODEL >> 2;
 
-//     for (int n = 0; n < NUM_HEAD; n++) {
-//         volatile auto query_kernel = new uint32_t[D_Q * D_MODEL >> 2]();
-//         volatile auto key_kernel = new uint32_t[D_Q * D_MODEL >> 2]();
-//         volatile auto value_kernel = new uint32_t[D_Q * D_MODEL >> 2]();
+    for (int n = 0; n < NUM_HEAD; n++) {
+        volatile auto query_kernel = new uint32_t[D_Q * D_MODEL >> 2]();
+        volatile auto key_kernel = new uint32_t[D_Q * D_MODEL >> 2]();
+        volatile auto value_kernel = new uint32_t[D_Q * D_MODEL >> 2]();
 
-// #ifdef RELOAD_WEIGHT
-//         loadWeight(n, 0, head_qkv_size, query_kernel, dir_name);
-//         loadWeight(n, 1, head_qkv_size, key_kernel, dir_name);
-//         loadWeight(n, 2, head_qkv_size, value_kernel, dir_name);
-// #else
-//         fill_weight(query_kernel, D_MODEL, D_Q >> 2);
-//         fill_weight(key_kernel, D_MODEL, D_Q >> 2);
-//         fill_weight(value_kernel,  D_MODEL, D_Q >> 2);
+#ifdef RELOAD_WEIGHT
+        loadWeight(n, 0, head_qkv_size, query_kernel, dir_name);
+        loadWeight(n, 1, head_qkv_size, key_kernel, dir_name);
+        loadWeight(n, 2, head_qkv_size, value_kernel, dir_name);
+#else
+        fill_weight(query_kernel, D_MODEL, D_Q >> 2);
+        fill_weight(key_kernel, D_MODEL, D_Q >> 2);
+        fill_weight(value_kernel,  D_MODEL, D_Q >> 2);
 
-//         saveWeight(n, 0, head_qkv_size, query_kernel, dir_name);
-//         saveWeight(n, 1, head_qkv_size, key_kernel, dir_name);
-//         saveWeight(n, 2, head_qkv_size, value_kernel, dir_name);
-// #endif
+        saveWeight(n, 0, head_qkv_size, query_kernel, dir_name);
+        saveWeight(n, 1, head_qkv_size, key_kernel, dir_name);
+        saveWeight(n, 2, head_qkv_size, value_kernel, dir_name);
+#endif
 
-// #ifndef BWMA
-//         // By default, the saved weights are in block-wise format
-//         // We need to convert them to row-wise format
-//         uint32_t* queryRowWise = new uint32_t [D_MODEL * D_Q >> 2];
-//         blockWise2RowWise(query_kernel, queryRowWise, D_MODEL, D_Q >> 2);
-//         query_kernel = queryRowWise;
-//         uint32_t* keyRowWise = new uint32_t [D_MODEL * D_Q >> 2];
-//         blockWise2RowWise(key_kernel, keyRowWise, D_MODEL, D_Q >> 2);
-//         key_kernel = keyRowWise;
-//         uint32_t* valueRowWise = new uint32_t [D_MODEL * D_Q >> 2];
-//         blockWise2RowWise(value_kernel, valueRowWise, D_MODEL, D_Q >> 2);
-//         value_kernel = valueRowWise;
-// #endif
+#ifndef BWMA
+        // By default, the saved weights are in block-wise format
+        // We need to convert them to row-wise format
+        uint32_t* queryRowWise = new uint32_t [D_MODEL * D_Q >> 2];
+        blockWise2RowWise(query_kernel, queryRowWise, D_MODEL, D_Q >> 2);
+        query_kernel = queryRowWise;
+        uint32_t* keyRowWise = new uint32_t [D_MODEL * D_Q >> 2];
+        blockWise2RowWise(key_kernel, keyRowWise, D_MODEL, D_Q >> 2);
+        key_kernel = keyRowWise;
+        uint32_t* valueRowWise = new uint32_t [D_MODEL * D_Q >> 2];
+        blockWise2RowWise(value_kernel, valueRowWise, D_MODEL, D_Q >> 2);
+        value_kernel = valueRowWise;
+#endif
 
-//         weightVec[n * 3] = query_kernel;
-//         weightVec[n * 3 + 1] = key_kernel;
-//         weightVec[n * 3 + 2] = value_kernel;
-//     }
+        weightVec[n * 3] = query_kernel;
+        weightVec[n * 3 + 1] = key_kernel;
+        weightVec[n * 3 + 2] = value_kernel;
+    }
 
-//     volatile auto condense_kernel = new uint32_t[NUM_HEAD * D_Q * D_MODEL >> 2]();
-//     volatile auto ff0_kernel = new uint32_t[D_MODEL * D_FF >> 2]();
-//     volatile auto ff1_kernel = new uint32_t[D_FF * D_MODEL >> 2]();
+    volatile auto condense_kernel = new uint32_t[NUM_HEAD * D_Q * D_MODEL >> 2]();
+    volatile auto ff0_kernel = new uint32_t[D_MODEL * D_FF >> 2]();
+    volatile auto ff1_kernel = new uint32_t[D_FF * D_MODEL >> 2]();
 
-// #ifdef RELOAD_WEIGHT
-//     int n = -1; // n=-1 means that we are not saving/loading a head
+#ifdef RELOAD_WEIGHT
+    int n = -1; // n=-1 means that we are not saving/loading a head
 
-//     loadWeight(n, 0, NUM_HEAD * D_Q * D_MODEL >> 2, condense_kernel, dir_name);
-//     loadWeight(n, 1, D_MODEL * D_FF >> 2, ff0_kernel, dir_name);
-//     loadWeight(n, 2, D_MODEL * D_FF >> 2, ff1_kernel, dir_name);
-// #else
-//     fill_weight(condense_kernel, D_MODEL, NUM_HEAD * D_Q >> 2);
-//     fill_weight(ff0_kernel, D_MODEL, D_FF >> 2);
-//     fill_weight(ff1_kernel, D_FF, D_MODEL >> 2);
+    loadWeight(n, 0, NUM_HEAD * D_Q * D_MODEL >> 2, condense_kernel, dir_name);
+    loadWeight(n, 1, D_MODEL * D_FF >> 2, ff0_kernel, dir_name);
+    loadWeight(n, 2, D_MODEL * D_FF >> 2, ff1_kernel, dir_name);
+#else
+    fill_weight(condense_kernel, D_MODEL, NUM_HEAD * D_Q >> 2);
+    fill_weight(ff0_kernel, D_MODEL, D_FF >> 2);
+    fill_weight(ff1_kernel, D_FF, D_MODEL >> 2);
 
-//     int n = -1; // n=-1 means that we are not saving/loading a head
-//     saveWeight(n, 0, NUM_HEAD * D_Q * D_MODEL >> 2, condense_kernel, dir_name);
-//     saveWeight(n, 1, D_MODEL* D_FF >> 2, ff0_kernel, dir_name);
-//     saveWeight(n, 2, D_MODEL* D_FF >> 2, ff1_kernel, dir_name);
-// #endif
+    int n = -1; // n=-1 means that we are not saving/loading a head
+    saveWeight(n, 0, NUM_HEAD * D_Q * D_MODEL >> 2, condense_kernel, dir_name);
+    saveWeight(n, 1, D_MODEL* D_FF >> 2, ff0_kernel, dir_name);
+    saveWeight(n, 2, D_MODEL* D_FF >> 2, ff1_kernel, dir_name);
+#endif
 
-// #ifndef BWMA
-//     // By default, the saved weights are in block-wise format
-//     // We need to convert them to row-wise format
-//     uint32_t* condenseRowWise = new uint32_t [NUM_HEAD * D_Q * D_MODEL >> 2];
-//     blockWise2RowWise(condense_kernel, condenseRowWise, NUM_HEAD * D_Q, D_MODEL >> 2);
-//     condense_kernel = condenseRowWise;
-//     uint32_t* ff0RowWise = new uint32_t [D_MODEL * D_FF >> 2];
-//     blockWise2RowWise(ff0_kernel, ff0RowWise, D_MODEL, D_FF >> 2);
-//     ff0_kernel = ff0RowWise;
-//     uint32_t* ff1RowWise = new uint32_t [D_FF * D_MODEL >> 2];
-//     blockWise2RowWise(ff1_kernel, ff1RowWise, D_FF, D_MODEL >> 2);
-//     ff1_kernel = ff1RowWise;
-// #endif
+#ifndef BWMA
+    // By default, the saved weights are in block-wise format
+    // We need to convert them to row-wise format
+    uint32_t* condenseRowWise = new uint32_t [NUM_HEAD * D_Q * D_MODEL >> 2];
+    blockWise2RowWise(condense_kernel, condenseRowWise, NUM_HEAD * D_Q, D_MODEL >> 2);
+    condense_kernel = condenseRowWise;
+    uint32_t* ff0RowWise = new uint32_t [D_MODEL * D_FF >> 2];
+    blockWise2RowWise(ff0_kernel, ff0RowWise, D_MODEL, D_FF >> 2);
+    ff0_kernel = ff0RowWise;
+    uint32_t* ff1RowWise = new uint32_t [D_FF * D_MODEL >> 2];
+    blockWise2RowWise(ff1_kernel, ff1RowWise, D_FF, D_MODEL >> 2);
+    ff1_kernel = ff1RowWise;
+#endif
 
-//     weightVec[NUM_HEAD * 3] = condense_kernel;
-//     weightVec[NUM_HEAD * 3 + 1] = ff0_kernel;
-//     weightVec[NUM_HEAD * 3 + 2] = ff1_kernel;
+    weightVec[NUM_HEAD * 3] = condense_kernel;
+    weightVec[NUM_HEAD * 3 + 1] = ff0_kernel;
+    weightVec[NUM_HEAD * 3 + 2] = ff1_kernel;
 
     TransformerBlock selfatten(D_SEQ, D_MODEL, D_Q, NUM_HEAD, D_FF, weightVec, KERNEL_DIM, MAX_COL);
     selfatten.compute(D_SEQ, tensor_in, out); // Compute loop from here
+
+    printOutputPreview(out, D_SEQ * D_MODEL >> 2);
+    saveOutput(D_SEQ * D_MODEL >> 2, out, dir_name);
 }
 
 int main() {
