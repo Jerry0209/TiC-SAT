@@ -56,16 +56,24 @@ void saveWeight(int n_head, int qkv, int size, uint32_t *array, const std::strin
     }
 }
 
-void loadWeight(int n_head, int qkv, int size, uint32_t *array, const std::string &dir_name) {
+bool tryLoadWeight(int n_head, int qkv, int size, uint32_t *array, const std::string &dir_name) {
     std::string filename = dir_name + "/H" + std::to_string(n_head) + "_L" +
             std::to_string(qkv) + ".bin";
     std::ifstream fin(filename);
-    if (fin.is_open()) {
-        for (int i = 0; i < size; i++) {
-            fin >> array[i];
-        }
-        fin.close();
-    } else {
+    if (!fin.is_open()) {
+        return false;
+    }
+    for (int i = 0; i < size; i++) {
+        fin >> array[i];
+    }
+    fin.close();
+    return true;
+}
+
+void loadWeight(int n_head, int qkv, int size, uint32_t *array, const std::string &dir_name) {
+    std::string filename = dir_name + "/H" + std::to_string(n_head) + "_L" +
+            std::to_string(qkv) + ".bin";
+    if (!tryLoadWeight(n_head, qkv, size, array, dir_name)) {
         std::cout << filename + " Not loaded" << std::endl;
     }
 }
@@ -111,6 +119,7 @@ void test() {
 
     // The directory where the weights and output are saved
     std::string dir_name = "/home/thu/TiC-SAT/weights";
+    std::string notebook_ff_dir = dir_name + "/generated_from_notebook";
 #ifndef RELOAD_WEIGHT
     std::filesystem::create_directories(dir_name);
 #endif
@@ -182,21 +191,36 @@ void test() {
     volatile auto ff0_kernel = new uint32_t[D_MODEL * D_FF >> 2]();
     volatile auto ff1_kernel = new uint32_t[D_FF * D_MODEL >> 2]();
 
-#ifdef RELOAD_WEIGHT
     int n = -1; // n=-1 means that we are not saving/loading a head
+    bool ff0_loaded_from_notebook = tryLoadWeight(n, 1, D_MODEL * D_FF >> 2, ff0_kernel, notebook_ff_dir);
+    bool ff1_loaded_from_notebook = tryLoadWeight(n, 2, D_MODEL * D_FF >> 2, ff1_kernel, notebook_ff_dir);
+    if (ff0_loaded_from_notebook) {
+        std::cout << "Loaded notebook-generated FF0 weights from " << notebook_ff_dir << std::endl;
+    }
+    if (ff1_loaded_from_notebook) {
+        std::cout << "Loaded notebook-generated FF1 weights from " << notebook_ff_dir << std::endl;
+    }
 
+#ifdef RELOAD_WEIGHT
     loadWeight(n, 0, NUM_HEAD * D_Q * D_MODEL >> 2, condense_kernel, dir_name);
-    loadWeight(n, 1, D_MODEL * D_FF >> 2, ff0_kernel, dir_name);
-    loadWeight(n, 2, D_MODEL * D_FF >> 2, ff1_kernel, dir_name);
+    if (!ff0_loaded_from_notebook) {
+        loadWeight(n, 1, D_MODEL * D_FF >> 2, ff0_kernel, dir_name);
+    }
+    if (!ff1_loaded_from_notebook) {
+        loadWeight(n, 2, D_MODEL * D_FF >> 2, ff1_kernel, dir_name);
+    }
 #else
     fill_weight(condense_kernel, D_MODEL, NUM_HEAD * D_Q >> 2);
-    fill_weight(ff0_kernel, D_MODEL, D_FF >> 2);
-    fill_weight(ff1_kernel, D_FF, D_MODEL >> 2);
+    if (!ff0_loaded_from_notebook) {
+        fill_weight(ff0_kernel, D_MODEL, D_FF >> 2);
+        saveWeight(n, 1, D_MODEL * D_FF >> 2, ff0_kernel, dir_name);
+    }
+    if (!ff1_loaded_from_notebook) {
+        fill_weight(ff1_kernel, D_FF, D_MODEL >> 2);
+        saveWeight(n, 2, D_MODEL * D_FF >> 2, ff1_kernel, dir_name);
+    }
 
-    int n = -1; // n=-1 means that we are not saving/loading a head
     saveWeight(n, 0, NUM_HEAD * D_Q * D_MODEL >> 2, condense_kernel, dir_name);
-    saveWeight(n, 1, D_MODEL* D_FF >> 2, ff0_kernel, dir_name);
-    saveWeight(n, 2, D_MODEL* D_FF >> 2, ff1_kernel, dir_name);
 #endif
 
 #ifndef BWMA

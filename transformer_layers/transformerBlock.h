@@ -32,6 +32,12 @@ private:
     Dense* condense;
     LinearLayer* feedForward0;
     LinearLayer* feedForward1;
+#ifdef USE_CODEBOOK
+    Dense* feedForward0Reference;
+    Dense* feedForward1Reference;
+    uint32_t* referenceFF0;
+    uint32_t* referenceFF1;
+#endif
 
 #ifndef BWMA
     uint32_t* multihead_out_reshape;

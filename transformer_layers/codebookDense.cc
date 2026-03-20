@@ -30,8 +30,8 @@ CodebookDense::CodebookDense(const CodebookDenseConfig &config)
     if (input_size_ == 0 || output_size_ == 0) {
         throw std::invalid_argument("CodebookDense requires non-zero input and output sizes");
     }
-    if (bits_per_cb_ == 0 || bits_per_cb_ > 16 || (32u % bits_per_cb_) != 0) {
-        throw std::invalid_argument("CodebookDense bits_per_cb must be a divisor of 32 between 1 and 16");
+    if (bits_per_cb_ == 0 || bits_per_cb_ > 16) {
+        throw std::invalid_argument("CodebookDense bits_per_cb must be between 1 and 16");
     }
     if ((input_size_ % 4) != 0 || (output_size_ % 4) != 0) {
         throw std::invalid_argument("CodebookDense expects packed int8 tensors with dimensions divisible by 4");
@@ -78,43 +78,34 @@ void CodebookDense::packInt8(const std::vector<int8_t> &src, uint32_t *dst) {
     }
 }
 
-void CodebookDense::unpackInput(std::size_t seq_len, const uint32_t *input) {
-    unpacked_input_.assign(seq_len * input_size_, 0.0f);
-    for (std::size_t seq = 0; seq < seq_len; seq++) {
-        const uint32_t *row = input + seq * (input_size_ / 4);
-        for (std::size_t in_idx = 0; in_idx < input_size_; in_idx++) {
-            int8_t raw = unpackInt8(row, in_idx);
-            unpacked_input_[seq * input_size_ + in_idx] = static_cast<float>(raw) * input_dequant_scale_;
-        }
-    }
-}
+void CodebookDense::runCompactGemm(std::size_t seq_len, const uint32_t *input, uint32_t *output) const {
+    std::vector<int8_t> packed_values(seq_len * output_size_, 0);
 
-void CodebookDense::runCompactGemm(std::size_t seq_len) {
-    output_float_.assign(seq_len * output_size_, 0.0f);
     for (std::size_t seq = 0; seq < seq_len; seq++) {
+        const uint32_t *input_row = input + seq * (input_size_ / 4);
         for (std::size_t out_idx = 0; out_idx < output_size_; out_idx++) {
             const uint32_t *packed_row = &weight_idx_[out_idx * n_words_row_];
-            float acc = bias_ == nullptr ? 0.0f : bias_[out_idx];
+            int sum = 0;
+
             for (std::size_t in_idx = 0; in_idx < input_size_; in_idx++) {
-                uint32_t cb_idx = getPackedIndex(packed_row, in_idx, bits_per_cb_);
-                acc += unpacked_input_[seq * input_size_ + in_idx] * codebook_[cb_idx];
+                int8_t input_value = unpackInt8(input_row, in_idx);
+                std::size_t reordered_in_idx = (in_idx & ~static_cast<std::size_t>(3)) + (3 - (in_idx & 3));
+                uint32_t cb_idx = getPackedIndex(packed_row, reordered_in_idx, bits_per_cb_);
+                int8_t weight_value = clampToInt8(codebook_[cb_idx] * output_quant_scale_);
+                sum += static_cast<int>(input_value) * static_cast<int>(weight_value);
             }
-            output_float_[seq * output_size_ + out_idx] = acc;
+
+            if (bias_ != nullptr) {
+                sum += static_cast<int>(std::round(bias_[out_idx] * output_quant_scale_));
+            }
+
+            packed_values[seq * output_size_ + out_idx] = static_cast<int8_t>(sum);
         }
     }
-}
 
-void CodebookDense::packOutput(std::size_t seq_len, uint32_t *output) const {
-    std::size_t total_values = seq_len * output_size_;
-    std::vector<int8_t> packed_values(total_values);
-    for (std::size_t idx = 0; idx < total_values; idx++) {
-        packed_values[idx] = clampToInt8(output_float_[idx] * output_quant_scale_);
-    }
     packInt8(packed_values, output);
 }
 
 void CodebookDense::compute(std::size_t seq_len, uint32_t *input, uint32_t *output) {
-    unpackInput(seq_len, input);
-    runCompactGemm(seq_len);
-    packOutput(seq_len, output);
+    runCompactGemm(seq_len, input, output);
 }

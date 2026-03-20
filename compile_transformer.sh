@@ -6,6 +6,14 @@ unset CC CXX CPATH LIBRARY_PATH LD_LIBRARY_PATH PKG_CONFIG_PATH CPPFLAGS LDFLAGS
 export A64CXX="$CONDA_PREFIX/bin/aarch64-conda-linux-gnu-g++"
 export A64SYSROOT="$($A64CXX -print-sysroot)"
 
+EXTRA_DEFS=""
+if [ "${USE_CODEBOOK:-0}" = "1" ]; then
+  EXTRA_DEFS="$EXTRA_DEFS -DUSE_CODEBOOK"
+  echo "Compiling with USE_CODEBOOK enabled"
+else
+  echo "Compiling with notebook/generated FFN bin loading enabled"
+fi
+
 # Symbolic link to required library
 # mkdir -p "$A64SYSROOT/lib"
 
@@ -27,6 +35,8 @@ export A64SYSROOT="$($A64CXX -print-sysroot)"
   -DDEVELOP \
   -DDEBUG_SMALL_MODEL \
   -DCORE_NUM=1 \
+  $EXTRA_DEFS \
+  -IFull_NN/gemm_definitions \
   -fopenmp \
   -o transformer.o
 

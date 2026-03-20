@@ -9,7 +9,7 @@
 
 #define CB_SIZE         8
 #define BITS_PER_CB		3
-#define IDX_MASK		((1u << BITS_PER_CB) - 1u)
+#define IDX_MASK		a0b111
 
 // Number of indexes packed per each 32-bits word
 #define IDXS_PER_WORD ((32) / (BITS_PER_CB))

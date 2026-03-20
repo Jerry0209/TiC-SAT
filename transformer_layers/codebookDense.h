@@ -32,9 +32,7 @@ private:
     static int8_t unpackInt8(const uint32_t *packed, std::size_t elem_idx);
     static void packInt8(const std::vector<int8_t> &src, uint32_t *dst);
 
-    void unpackInput(std::size_t seq_len, const uint32_t *input);
-    void runCompactGemm(std::size_t seq_len);
-    void packOutput(std::size_t seq_len, uint32_t *output) const;
+    void runCompactGemm(std::size_t seq_len, const uint32_t *input, uint32_t *output) const;
 
     std::size_t input_size_;
     std::size_t output_size_;
@@ -46,6 +44,4 @@ private:
     float input_dequant_scale_;
     float output_quant_scale_;
 
-    std::vector<float> unpacked_input_;
-    std::vector<float> output_float_;
 };
