@@ -30,8 +30,8 @@ private:
     uint32_t* intermediateFFBlockWise;
     AddNormalize* addNorm;
     Dense* condense;
-    Dense* feedForward0;
-    Dense* feedForward1;
+    LinearLayer* feedForward0;
+    LinearLayer* feedForward1;
 
 #ifndef BWMA
     uint32_t* multihead_out_reshape;

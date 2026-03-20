@@ -1,0 +1,36 @@
+#ifndef _CODEBOOKS_DEF_H_
+#define _CODEBOOKS_DEF_H_
+
+#define N_LEARNERS      1
+
+#define N_SVE_LANES     1
+#define N_SVE_HALF      2
+#define N_SVE_BYTE      4
+
+#define CB_SIZE         8
+#define BITS_PER_CB		3
+#define IDX_MASK		((1u << BITS_PER_CB) - 1u)
+
+// Number of indexes packed per each 32-bits word
+#define IDXS_PER_WORD ((32) / (BITS_PER_CB))
+#define IDXS_PER_WORD_16 ((16) / (BITS_PER_CB))
+
+
+// Number of indexes packed per each vector register
+#define IDX_PER_VECT	((N_SVE_LANES) * (IDXS_PER_WORD))
+
+#define N_SVE_REG_CB_8	8
+#define N_SVE_REG_CB_F16_4	4
+
+
+#define USE_F32   1
+
+#define USE_BIAS
+
+#define SAME_SEQ    1
+
+
+
+
+
+#endif

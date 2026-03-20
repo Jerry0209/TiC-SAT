@@ -5,12 +5,50 @@
 #include "transformerBlock.h"
 #include "debuggerFunctions.h"
 
+#ifdef USE_CODEBOOK
+#include "codebookDense.h"
+#include "../Full_NN/gemm_definitions/gemm_header_0.h"
+#if __has_include("../Full_NN/gemm_definitions/gemm_header_1.h")
+#include "../Full_NN/gemm_definitions/gemm_header_1.h"
+#define TIC_SAT_HAS_CODEBOOK_FF1 1
+#else
+#define TIC_SAT_HAS_CODEBOOK_FF1 0
+#endif
+#endif
+
 namespace {
 void runM5IfAvailable(const char *command) {
     if (std::system("command -v m5 >/dev/null 2>&1") == 0) {
         std::system(command);
     }
 }
+
+#ifdef USE_CODEBOOK
+CodebookDenseConfig makeCodebookDenseConfig(std::size_t expected_input_size,
+                                            std::size_t expected_output_size,
+                                            std::size_t input_size,
+                                            std::size_t output_size,
+                                            std::size_t n_words_row,
+                                            const uint32_t *weight_idx,
+                                            const float *codebook,
+                                            const float *bias) {
+    if (expected_input_size != input_size || expected_output_size != output_size) {
+        throw std::invalid_argument("CodebookDense config shape does not match Transformer FFN dimensions");
+    }
+
+    return CodebookDenseConfig{
+        input_size,
+        output_size,
+        n_words_row,
+        BITS_PER_CB,
+        weight_idx,
+        codebook,
+        bias,
+        1.0f,
+        1.0f,
+    };
+}
+#endif
 }
 
 TransformerBlock::TransformerBlock(std::size_t pre_seq_len, std::size_t input_dim, std::size_t head_hidden_size,
@@ -37,8 +75,22 @@ TransformerBlock::TransformerBlock(std::size_t pre_seq_len, std::size_t input_di
 #endif
 
     addNorm = new AddNormalize(pre_seq_len, input_dim, kernelDim, maxCol);
+#ifdef USE_CODEBOOK
+    feedForward0 = new CodebookDense(makeCodebookDenseConfig(
+            input_dim, ff_size, INPUT_SIZE_0, OUTPUT_SIZE_0, N_WORDS_ROW_0,
+            weight_idx_compact_0, codebooks_0[0], bias_0[0]));
+#if TIC_SAT_HAS_CODEBOOK_FF1
+    feedForward1 = new CodebookDense(makeCodebookDenseConfig(
+            ff_size, input_dim, INPUT_SIZE_1, OUTPUT_SIZE_1, N_WORDS_ROW_1,
+            weight_idx_compact_1, codebooks_1[0], bias_1[0]));
+#else
+    std::cout << "USE_CODEBOOK enabled, but gemm_header_1.h was not found; feedForward1 falls back to Dense." << std::endl;
+    feedForward1 = new Dense(ff_size, input_dim, weightVector[num_heads * 3 + 2]);
+#endif
+#else
     feedForward0 = new Dense(input_dim, ff_size, weightVector[num_heads * 3+ 1]);
     feedForward1 = new Dense(ff_size, input_dim, weightVector[num_heads * 3 + 2]);
+#endif
 }
 
 TransformerBlock::~TransformerBlock() = default;
