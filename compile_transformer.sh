@@ -31,15 +31,19 @@ fi
   transformer_layers/*.cc \
   accelerator/smm_gem.cpp \
   accelerator/systolic_m2m.cc \
-  -DSA_SIZE=16 \
+  -DSA_SIZE=4 \
   -DDEVELOP \
+  -DRELOAD_WEIGHT \
   -DDEBUG_SMALL_MODEL \
   -DCORE_NUM=1 \
   $EXTRA_DEFS \
   -IFull_NN/gemm_definitions \
   -fopenmp \
   -o transformer.o
+  # -DRELOAD_WEIGHT \
 
+# conda activate gem5_env
+# source compile_transformer.sh 
 # qemu-aarch64 -L "$A64SYSROOT" ./transformer.o # Run this command to run Transformer with aarch64 on eslsrv12
 # cp ~/TiC-SAT-Jerry/transformer.o /home/jerry/gem5/shared_folder/
 

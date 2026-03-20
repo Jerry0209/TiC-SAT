@@ -25,7 +25,7 @@ void fill_kernel(uint32_t *kernel, int kernel_size) {
     }
 }
 
-void fill_weight(uint32_t *kernel, int n_row, int n_col) {
+void fill_weight(uint32_t *kernel, int n_row, int n_col) { // ？
     uint32_t *kernel_ptr = kernel;
     for (int i = 0; i < n_row / KERNEL_DIM; i++) {
         for (int j = 0; j < n_col / MAX_COL; j++) {
@@ -146,7 +146,7 @@ void test() {
 #endif
 
     uint32_t *out = new uint32_t[D_SEQ * D_MODEL >> 2]();
-    uint32_t *weightVec[3 * NUM_HEAD + 3];
+    uint32_t *weightVec[3 * NUM_HEAD + 3]; // Array of pointers: each head has Q, K, V matrices
     int head_qkv_size = D_Q * D_MODEL >> 2;
 
     for (int n = 0; n < NUM_HEAD; n++) {
