@@ -36,11 +36,11 @@ fi
   -DRELOAD_WEIGHT \
   -DDEBUG_SMALL_MODEL \
   -DCORE_NUM=1 \
-  $EXTRA_DEFS \
-  -IFull_NN/gemm_definitions \
   -fopenmp \
   -o transformer.o
   # -DRELOAD_WEIGHT \
+  # $EXTRA_DEFS \
+  # -IFull_NN/gemm_definitions \
 
 # conda activate gem5_env
 # source compile_transformer.sh 
