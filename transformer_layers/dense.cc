@@ -28,11 +28,7 @@ void Dense::multiplyweight(std::size_t seq_len, uint32_t *input, uint32_t *outpu
 #ifdef SIMD
     simdComputeRWMA(seq_len, input, output, weight, input_size_, output_size_);
 #else
-#ifdef USE_CODEBOOK
-    // gemm_exec_compact();
-#else
     smmComputeRWMA(seq_len, input, output, weight, input_size_, output_size_);
-#endif
 #endif
 #endif
 }

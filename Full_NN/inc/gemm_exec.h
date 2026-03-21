@@ -2,6 +2,8 @@
 #define _GEMM_EXEC_H_
 
 #include <inttypes.h>
+#include <stdint.h>
+
 
 typedef struct gemm_struct {
     uint16_t seq_len;
@@ -24,5 +26,19 @@ void gemm_exec_compact(gemm_t gemm_layer,
                        const float *bias,
                        float *out,
                        uint8_t bits_per_cb);
+
+void gemm_exec_noCB_int(gemm_t gemm_layer,
+                        const int8_t *in,
+                        const int8_t *weights,
+                        const int32_t *bias,
+                        int32_t *out);
+
+void gemm_exec_compact_int(gemm_t gemm_layer,
+                           const int8_t *in,
+                           const uint32_t *weight_idx,
+                           const int8_t *codebook,
+                           const int32_t *bias,
+                           int32_t *out,
+                           uint8_t bits_per_cb);
 
 #endif

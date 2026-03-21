@@ -69,7 +69,7 @@ int8_t unpackPackedValue(const uint32_t *buffer, std::size_t elem_idx) {
 void comparePackedBuffers(const char *label,
                           const uint32_t *dense_reference,
                           const uint32_t *candidate,
-                          std::size_t packed_size) {
+                          std::size_t packed_size) { 
     std::size_t total_values = packed_size * 4;
     int max_abs_diff = 0;
     std::size_t mismatch_count = 0;
@@ -225,7 +225,7 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t *input, uint32_t *o
     feedForward1->compute(seq_len, intermediateFF, output);
     printPackedPreview("ffn1_pre_addnorm", output, seq_len * input_dim_ >> 2);
     savePackedBuffer(kFfn1DebugPath, output, seq_len * input_dim_ >> 2);
-#ifdef USE_CODEBOOK
+#ifdef USE_CODEBOOK 
     std::fill(referenceFF1, referenceFF1 + (seq_len * input_dim_ >> 2), 0u);
     feedForward1Reference->compute(seq_len, referenceFF0, referenceFF1);
     comparePackedBuffers("ffn1_pre_addnorm", referenceFF1, output, seq_len * input_dim_ >> 2);
