@@ -5,15 +5,24 @@
 #include "transformerBlock.h"
 #include "debuggerFunctions.h"
 #include <algorithm>
+#include <cstdlib>
 #include <fstream>
 #include <stdexcept>
 
 
 #ifdef USE_CODEBOOK
 #include "codebookDense.h"
+#define codebooks_ codebooks_0
+#define codebook_interleaved_ codebook_interleaved_0
 #include "../Full_NN/gemm_definitions/gemm_header_0.h"
+#undef codebook_interleaved_
+#undef codebooks_
 #if __has_include("../Full_NN/gemm_definitions/gemm_header_1.h")
+#define codebooks_ codebooks_1
+#define codebook_interleaved_ codebook_interleaved_1
 #include "../Full_NN/gemm_definitions/gemm_header_1.h"
+#undef codebook_interleaved_
+#undef codebooks_
 #define TIC_SAT_HAS_CODEBOOK_FF1 1
 #else
 #define TIC_SAT_HAS_CODEBOOK_FF1 0
@@ -23,7 +32,6 @@
 namespace {
 constexpr const char *kFfn0DebugPath = "/home/thu/TiC-SAT/weights/ffn0_output.bin";
 constexpr const char *kFfn1DebugPath = "/home/thu/TiC-SAT/weights/ffn1_output_pre_addnorm.bin";
-constexpr float kNotebookWeightQuantScale = 32.0f;
 
 void runM5IfAvailable(const char *command) {
     if (std::system("command -v m5 >/dev/null 2>&1") == 0) {
@@ -110,23 +118,26 @@ CodebookDenseConfig makeCodebookDenseConfig(std::size_t expected_input_size,
                                             std::size_t output_size,
                                             std::size_t n_words_row,
                                             const uint32_t *weight_idx,
-                                            const float *codebook,
+                                            const int8_t *codebook_int8,
                                             const float *bias) {
     if (expected_input_size != input_size || expected_output_size != output_size) {
         throw std::invalid_argument("CodebookDense config shape does not match Transformer FFN dimensions");
     }
 
-    return CodebookDenseConfig{
-        input_size,
-        output_size,
-        n_words_row,
-        BITS_PER_CB,
-        weight_idx,
-        codebook,
-        nullptr,
-        1.0f,
-        kNotebookWeightQuantScale,
-    };
+    (void)bias;
+
+    CodebookDenseConfig config{};
+    config.input_size = input_size;
+    config.output_size = output_size;
+    config.n_words_row = n_words_row;
+    config.bits_per_cb = BITS_PER_CB;
+    config.weight_idx = weight_idx;
+    config.codebook_int8 = codebook_int8;
+    config.bias = nullptr;
+    config.input_dequant_scale = 1.0f;
+    config.output_quant_scale = 1.0f;
+    config.reverse_input_groups_of_4 = true;
+    return config;
 }
 #endif
 }

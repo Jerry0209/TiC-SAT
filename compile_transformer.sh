@@ -3,8 +3,21 @@
 
 unset CC CXX CPATH LIBRARY_PATH LD_LIBRARY_PATH PKG_CONFIG_PATH CPPFLAGS LDFLAGS
 
-export A64CXX="$CONDA_PREFIX/bin/aarch64-conda-linux-gnu-g++"
-export A64SYSROOT="$($A64CXX -print-sysroot)"
+DEFAULT_A64CXX="$CONDA_PREFIX/bin/aarch64-conda-linux-gnu-g++"
+if [ -z "${A64CXX:-}" ]; then
+  if [ -x "$DEFAULT_A64CXX" ]; then
+    A64CXX="$DEFAULT_A64CXX"
+  elif command -v aarch64-linux-gnu-g++ >/dev/null 2>&1; then
+    A64CXX="$(command -v aarch64-linux-gnu-g++)"
+  elif command -v aarch64-conda-linux-gnu-g++ >/dev/null 2>&1; then
+    A64CXX="$(command -v aarch64-conda-linux-gnu-g++)"
+  else
+    echo "No aarch64 C++ compiler found. Set A64CXX to your cross compiler path." >&2
+    exit 1
+  fi
+fi
+export A64CXX
+export A64SYSROOT="$($A64CXX -print-sysroot 2>/dev/null || true)"
 
 EXTRA_DEFS=""
 if [ "${USE_CODEBOOK:-0}" = "1" ]; then
@@ -29,8 +42,12 @@ fi
 "$A64CXX" -O2 -Wall \
   transformer.cpp \
   transformer_layers/*.cc \
+  Full_NN/src/gemm_exec.c \
   accelerator/smm_gem.cpp \
   accelerator/systolic_m2m.cc \
+  $EXTRA_DEFS \
+  -IFull_NN/inc \
+  -IFull_NN/gemm_definitions \
   -DSA_SIZE=4 \
   -DDEVELOP \
   -DRELOAD_WEIGHT \
@@ -38,14 +55,9 @@ fi
   -DCORE_NUM=1 \
   -fopenmp \
   -o transformer.o
-  # -DRELOAD_WEIGHT \
-  # $EXTRA_DEFS \
-  # -IFull_NN/gemm_definitions \
 
 # conda activate gem5_env
 # source compile_transformer.sh 
+# USE_CODEBOOK=1 source compile_transformer.sh
 # qemu-aarch64 -L "$A64SYSROOT" ./transformer.o # Run this command to run Transformer with aarch64 on eslsrv12
 # cp ~/TiC-SAT-Jerry/transformer.o /home/jerry/gem5/shared_folder/
-
-
-

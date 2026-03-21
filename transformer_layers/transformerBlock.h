@@ -1,9 +1,14 @@
 //
 // Created by alireza on 3/2/22.
 //
+
+#include <cstddef>
+#include <cstdint>
+
 #include "selfattention.h"
 #include "addNorm.h"
 #include "dense.h"
+#include "linearLayer.h"
 
 #ifndef FVLLMONTITRANSFORMER_MULTIHEADSELFATTENTION_H
 #define FVLLMONTITRANSFORMER_MULTIHEADSELFATTENTION_H
@@ -30,10 +35,16 @@ private:
     uint32_t* intermediateFFBlockWise;
     AddNormalize* addNorm;
     Dense* condense;
-    Dense* feedForward0;
-    Dense* feedForward1;
-    // LinearLayer* feedForward0;
-    // LinearLayer* feedForward1;
+    // Dense* feedForward0;
+    // Dense* feedForward1;
+    LinearLayer* feedForward0;
+    LinearLayer* feedForward1;
+#ifdef USE_CODEBOOK
+    LinearLayer* feedForward0Reference;
+    LinearLayer* feedForward1Reference;
+    uint32_t* referenceFF0;
+    uint32_t* referenceFF1;
+#endif
 
 #ifndef BWMA
     uint32_t* multihead_out_reshape;
