@@ -65,6 +65,7 @@ bool tryLoadWeight(int n_head, int qkv, int size, uint32_t *array, const std::st
     }
     for (int i = 0; i < size; i++) {
         fin >> array[i];
+        printf("tryLoadWeight: current i, %d, current uint32 array[i],  %u\n", i, array[i]);
     }
     fin.close();
     return true;
@@ -191,8 +192,11 @@ void test() {
     volatile auto ff0_kernel = new uint32_t[D_MODEL * D_FF >> 2]();
     volatile auto ff1_kernel = new uint32_t[D_FF * D_MODEL >> 2]();
 
+
+    // Load .bin weights generated from the notebook
     int n = -1; // n=-1 means that we are not saving/loading a head
-    bool ff0_loaded_from_notebook = tryLoadWeight(n, 1, D_MODEL * D_FF >> 2, ff0_kernel, notebook_ff_dir);
+    printf("Feed forward layer: loading weights of feedforward layer\n");
+    bool ff0_loaded_from_notebook = tryLoadWeight(n, 1, D_MODEL * D_FF >> 2, ff0_kernel, notebook_ff_dir); // This logic could be optimized further
     bool ff1_loaded_from_notebook = tryLoadWeight(n, 2, D_MODEL * D_FF >> 2, ff1_kernel, notebook_ff_dir);
     if (ff0_loaded_from_notebook) {
         std::cout << "Loaded notebook-generated FF0 weights from " << notebook_ff_dir << std::endl;
@@ -229,9 +233,11 @@ void test() {
     uint32_t* condenseRowWise = new uint32_t [NUM_HEAD * D_Q * D_MODEL >> 2];
     blockWise2RowWise(condense_kernel, condenseRowWise, NUM_HEAD * D_Q, D_MODEL >> 2);
     condense_kernel = condenseRowWise;
+    printf("blockWise2RowWise: ff0\n");
     uint32_t* ff0RowWise = new uint32_t [D_MODEL * D_FF >> 2];
     blockWise2RowWise(ff0_kernel, ff0RowWise, D_MODEL, D_FF >> 2);
     ff0_kernel = ff0RowWise;
+    printf("blockWise2RowWise: ff1\n");
     uint32_t* ff1RowWise = new uint32_t [D_FF * D_MODEL >> 2];
     blockWise2RowWise(ff1_kernel, ff1RowWise, D_FF, D_MODEL >> 2);
     ff1_kernel = ff1RowWise;

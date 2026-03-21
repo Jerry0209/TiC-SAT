@@ -54,6 +54,7 @@ void blockWise2RowWise(const uint32_t * blockWise, uint32_t* rowWise, int n_row,
         for (int row=0; row < n_row; row++){
             for (int i=0; i<MAX_COL; i++){
                 *(rowWise + i) = *(blockWise+ i);
+                printf("blockWise2RowWise: current i, %d, rowWise, %u\n", i, *(rowWise + i));
             }
             blockWise += MAX_COL;
             rowWise += n_col;
