@@ -11,14 +11,14 @@
 
 
 #ifdef USE_CODEBOOK
-#include "codebookDense.h"
-#define codebooks_ codebooks_0
+#include "codebookDense.h" // Further improvement: find a more flexible ways to integrate more layers in the future instead of hardcoded the names
+#define codebooks_ codebooks_0 // The same name of the attributes in weights header files
 #define codebook_interleaved_ codebook_interleaved_0
 #include "../Full_NN/gemm_definitions/gemm_header_0.h"
 #undef codebook_interleaved_
 #undef codebooks_
 #if __has_include("../Full_NN/gemm_definitions/gemm_header_1.h")
-#define codebooks_ codebooks_1
+#define codebooks_ codebooks_1 // ?
 #define codebook_interleaved_ codebook_interleaved_1
 #include "../Full_NN/gemm_definitions/gemm_header_1.h"
 #undef codebook_interleaved_
@@ -33,11 +33,22 @@ namespace {
 constexpr const char *kFfn0DebugPath = "/home/thu/TiC-SAT/weights/ffn0_output.bin";
 constexpr const char *kFfn1DebugPath = "/home/thu/TiC-SAT/weights/ffn1_output_pre_addnorm.bin";
 
+
+
+// Run statistics if the program is run on gem 5
 void runM5IfAvailable(const char *command) {
     if (std::system("command -v m5 >/dev/null 2>&1") == 0) {
         std::system(command);
     }
 }
+
+/* Unpack the results and print 
+Feed Forward 1
+ffn1_pre_addnorm preview (first 4 packed words):
+ffn1_pre_addnorm[0] = 33489149 -> [-3, 0, -1, 1]
+ffn1_pre_addnorm[1] = 4278124289 -> [1, -1, -2, -2]
+ffn1_pre_addnorm[2] = 65928689 -> [-15, -3, -19, 3]
+ffn1_pre_addnorm[3] = 4125492229 -> [5, 4, -26, -11] */
 
 void printPackedPreview(const char *label, const uint32_t *buffer, std::size_t packed_size) {
     std::size_t preview = std::min<std::size_t>(packed_size, 8);
@@ -55,6 +66,8 @@ void printPackedPreview(const char *label, const uint32_t *buffer, std::size_t p
     }
 }
 
+
+// Save intermediate results for debugging
 void savePackedBuffer(const char *filename, const uint32_t *buffer, std::size_t packed_size) {
     std::ofstream fout(filename);
     if (!fout.is_open()) {
@@ -68,12 +81,14 @@ void savePackedBuffer(const char *filename, const uint32_t *buffer, std::size_t 
     fout.close();
 }
 
+// Auxiliary function: convert 32-bit packed values to 8-bit unpacked values
 int8_t unpackPackedValue(const uint32_t *buffer, std::size_t elem_idx) {
     std::size_t word_idx = elem_idx / 4;
     std::size_t byte_idx = elem_idx % 4;
     return static_cast<int8_t>((buffer[word_idx] >> (byte_idx * 8)) & 0xFF);
 }
 
+// Auxiliary function: compare the results of gemm_exec and orginal tranformer code
 void comparePackedBuffers(const char *label,
                           const uint32_t *dense_reference,
                           const uint32_t *candidate,
@@ -112,6 +127,7 @@ void comparePackedBuffers(const char *label,
 }
 
 #ifdef USE_CODEBOOK
+// Class for preloading the codebooked weights from layer header files
 CodebookDenseConfig makeCodebookDenseConfig(std::size_t expected_input_size,
                                             std::size_t expected_output_size,
                                             std::size_t input_size,
@@ -172,10 +188,12 @@ TransformerBlock::TransformerBlock(std::size_t pre_seq_len, std::size_t input_di
 
     addNorm = new AddNormalize(pre_seq_len, input_dim, kernelDim, maxCol);
 #ifdef USE_CODEBOOK
+    // Use codebooked feedforward layer
     feedForward0 = new CodebookDense(makeCodebookDenseConfig(
             input_dim, ff_size, INPUT_SIZE_0, OUTPUT_SIZE_0, N_WORDS_ROW_0,
-            weight_idx_compact_0, codebooks_0[0], bias_0[0]));
+            weight_idx_compact_0, codebooks_0[0], bias_0[0])); // Get codebooks, indexes and bias from gemm_header
 #if TIC_SAT_HAS_CODEBOOK_FF1
+    // Test for two codebooked feedforward layers
     feedForward1 = new CodebookDense(makeCodebookDenseConfig(
             ff_size, input_dim, INPUT_SIZE_1, OUTPUT_SIZE_1, N_WORDS_ROW_1,
             weight_idx_compact_1, codebooks_1[0], bias_1[0]));
@@ -211,6 +229,7 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t *input, uint32_t *o
 
     std::cout << "Condense"  << std::endl;
     condense->compute(seq_len, multihead_out, condense_out);
+    printPackedPreview("condense_out", condense_out, (seq_len * input_dim_) >> 2);
 
 
     std::cout << "Add Norm"  << std::endl;
@@ -224,7 +243,7 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t *input, uint32_t *o
 
     std::cout << "Feed Forward 0"  << std::endl;
     feedForward0->compute(seq_len, condense_out, intermediateFF);
-    printPackedPreview("ffn0", intermediateFF, seq_len * ff_size_ >> 2);
+    printPackedPreview("ffn0", intermediateFF, seq_len * ff_size_ >> 2); // For debugging
     savePackedBuffer(kFfn0DebugPath, intermediateFF, seq_len * ff_size_ >> 2);
 #ifdef USE_CODEBOOK
     std::fill(referenceFF0, referenceFF0 + (seq_len * ff_size_ >> 2), 0u);

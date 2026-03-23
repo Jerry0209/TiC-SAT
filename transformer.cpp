@@ -79,7 +79,7 @@ void loadWeight(int n_head, int qkv, int size, uint32_t *array, const std::strin
     }
 }
 
-// Jerry: print the output
+// Jerry: print the output for debugging
 void printOutputPreview(const uint32_t *out, int size) {
     int preview = std::min(size, 8);
     std::cout << "Output preview (first " << preview << " packed words):" << std::endl;
@@ -96,7 +96,7 @@ void printOutputPreview(const uint32_t *out, int size) {
     }
 }
 
-// Jerry: save the output
+// Jerry: save the output for debugging
 void saveOutput(int size, const uint32_t *array, const std::string &dir_name) {
     std::string filename = dir_name + "/output.bin";
     std::ofstream fout(filename);

@@ -19,7 +19,7 @@ void AddNormalize::compute(uint32_t *input, uint32_t *output) {
         auto* output_ptr = (int8_t*) (output + i * (input_dim_ >> 2));
         int32_t sum = 0;
         for (int j=0; j< input_dim_; j++){
-            *output_ptr = (int8_t) (*output_ptr + *input_ptr);
+            *output_ptr = (int8_t) (*output_ptr + *input_ptr); // Residual
             sum += *output_ptr;
             output_ptr ++;
             input_ptr ++;
@@ -34,6 +34,15 @@ void AddNormalize::compute(uint32_t *input, uint32_t *output) {
         variance = variance / (int) input_dim_;
         double sd = sqrt((double) variance);
         auto sd_inv = (int32_t) ((1<<2)/(sd + 1)); // prevent zero divide! // Assuming that the values are fixed-point with 2 digit of fraction.
+
+        // ===== Debug =====
+        std::cout << "row " << i << ", mean = " << mean << std::endl;
+        std::cout << "row " << i
+                  << ", variance = " << variance
+                  << ", sd = " << sd
+                  << ", sd_inv = " << sd_inv
+                  << std::endl;
+        // ====================
 
         output_ptr = (int8_t*) (output + i * (input_dim_ >> 2));
         for (int j=0; j< input_dim_; j++){
