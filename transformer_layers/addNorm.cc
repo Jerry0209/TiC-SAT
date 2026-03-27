@@ -29,19 +29,23 @@ void AddNormalize::compute(uint32_t *input, uint32_t *output) {
         auto mean = (int32_t) (sum / input_dim_);
         int32_t variance = 0;
         for (int j=0; j< input_dim_; j++){
-            variance+= (*output_ptr++ - mean) ^ 2; // Assuming that the values are fixed-point with 2 digit of fraction.
+            // variance+= (*output_ptr++ - mean) ^ 2; // Assuming that the values are fixed-point with 2 digit of fraction.
+            
+            /* Fix bug: variance calculation */
+            int32_t diff = static_cast<int32_t>(*output_ptr++) - mean;
+            variance += diff * diff;
         }
         variance = variance / (int) input_dim_;
         double sd = sqrt((double) variance);
         auto sd_inv = (int32_t) ((1<<2)/(sd + 1)); // prevent zero divide! // Assuming that the values are fixed-point with 2 digit of fraction.
 
         // ===== Debug =====
-        std::cout << "row " << i << ", mean = " << mean << std::endl;
-        std::cout << "row " << i
-                  << ", variance = " << variance
-                  << ", sd = " << sd
-                  << ", sd_inv = " << sd_inv
-                  << std::endl;
+        // std::cout << "row " << i << ", mean = " << mean << std::endl;
+        // std::cout << "row " << i
+        //           << ", variance = " << variance
+        //           << ", sd = " << sd
+        //           << ", sd_inv = " << sd_inv
+        //           << std::endl;
         // ====================
 
         output_ptr = (int8_t*) (output + i * (input_dim_ >> 2));

@@ -11,6 +11,7 @@
 #define D_MODEL 8
 #define NUM_HEAD 2
 #define D_FF 4
+
 // #define D_Q 16
 // #define D_SEQ 16
 // #define D_MODEL 32
