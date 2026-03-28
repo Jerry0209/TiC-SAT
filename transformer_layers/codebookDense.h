@@ -17,7 +17,6 @@ struct CodebookDenseConfig {
     const float *bias = nullptr;
     float input_dequant_scale = 1.0f;
     float output_quant_scale = 1.0f;
-    bool reverse_input_groups_of_4 = true;
 };
 
 class CodebookDense : public LinearLayer {
@@ -46,7 +45,6 @@ private:
     const float *bias_;
     float input_dequant_scale_;
     float output_quant_scale_;
-    bool reverse_input_groups_of_4_;
 
     // For integer weights
     std::vector<int8_t> codebook_q_;

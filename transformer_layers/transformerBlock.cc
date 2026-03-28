@@ -76,7 +76,6 @@ CodebookDenseConfig makeCodebookDenseConfig(std::size_t expected_input_size,
     config.bias = nullptr;
     config.input_dequant_scale = 1.0f;
     config.output_quant_scale = 1.0f;
-    config.reverse_input_groups_of_4 = false;
     return config;
 }
 #endif

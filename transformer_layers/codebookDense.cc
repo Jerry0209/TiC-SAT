@@ -50,26 +50,7 @@ int32_t clampToInt32(double value) {
     }
     return static_cast<int32_t>(rounded);
 }
-
-
-/**
- * @brief Reverse the order of elements inside each group of four input values (Endianness coversion).
- *
- * Example:
- *   group [0,1,2,3] becomes [3,2,1,0]
- *   group [4,5,6,7] becomes [7,6,5,4]
- *
- * This is useful when the hardware or packed layout expects bytes in reverse order
- * inside each 32-bit word.
- *
- * @param elem_idx Original element index.
- * @return Reordered element index inside the same group of four.
- */
-std::size_t reverseInputGroupOfFour(std::size_t elem_idx) {
-    return (elem_idx & ~static_cast<std::size_t>(3)) + (3 - (elem_idx & 3));
 }
-}
-
 
 /**
  * @brief Construct a CodebookDense layer from a configuration object.
@@ -97,8 +78,7 @@ CodebookDense::CodebookDense(const CodebookDenseConfig &config)
       codebook_(config.codebook),
       bias_(config.bias),
       input_dequant_scale_(config.input_dequant_scale == 0.0f ? 1.0f : config.input_dequant_scale),
-      output_quant_scale_(config.output_quant_scale == 0.0f ? 1.0f : config.output_quant_scale),
-      reverse_input_groups_of_4_(config.reverse_input_groups_of_4) {
+      output_quant_scale_(config.output_quant_scale == 0.0f ? 1.0f : config.output_quant_scale) {
     if (input_size_ == 0 || output_size_ == 0) {
         throw std::invalid_argument("CodebookDense requires non-zero input and output sizes");
     }
@@ -263,8 +243,7 @@ void CodebookDense::runCompactGemm(std::size_t seq_len, const uint32_t *input, u
     for (std::size_t seq = 0; seq < seq_len; seq++) {
         const uint32_t *input_row = input + seq * (input_size_ / 4); // Input matrix from previous layer
         for (std::size_t in_idx = 0; in_idx < input_size_; in_idx++) {
-            std::size_t dst_idx = reverse_input_groups_of_4_ ? reverseInputGroupOfFour(in_idx) : in_idx;
-            input_unpacked[seq * input_size_ + dst_idx] = unpackInt8(input_row, in_idx);
+            input_unpacked[seq * input_size_ + in_idx] = unpackInt8(input_row, in_idx);
         }
     }
 
