@@ -14,6 +14,7 @@
 
 #if CFG_USE_CODEBOOK_GEMM
 #include "codebookDense.h"
+
 #define codebooks_ codebooks_0
 #define codebook_interleaved_ codebook_interleaved_0
 #include "../Full_NN/gemm_definitions/gemm_header_0.h"
@@ -23,6 +24,12 @@
 #define codebooks_ codebooks_1
 #define codebook_interleaved_ codebook_interleaved_1
 #include "../Full_NN/gemm_definitions/gemm_header_1.h"
+#undef codebook_interleaved_
+#undef codebooks_
+
+#define codebooks_ codebooks_2
+#define codebook_interleaved_ codebook_interleaved_2
+#include "../Full_NN/gemm_definitions/gemm_header_2.h"
 #undef codebook_interleaved_
 #undef codebooks_
 #endif
@@ -91,8 +98,6 @@ TransformerBlock::TransformerBlock(std::size_t pre_seq_len, std::size_t input_di
                                               kernelDim, maxCol);
     }
 
-    condense = new Dense(num_heads* head_hidden_size, input_dim, weightVector[num_heads * 3]);
-
     multihead_out = new uint32_t[pre_seq_len * num_heads * head_hidden_size >> 2]();
     condense_out = new uint32_t[pre_seq_len * input_dim >> 2]();
     intermediateFF = new uint32_t[pre_seq_len * ff_size >> 2]();
@@ -105,23 +110,56 @@ TransformerBlock::TransformerBlock(std::size_t pre_seq_len, std::size_t input_di
     addNorm = new AddNormalize(pre_seq_len, input_dim, kernelDim, maxCol);
 
 #if CFG_USE_CODEBOOK_GEMM
+    condense = new CodebookDense(makeCodebookDenseConfig(
+            num_heads * head_hidden_size,
+            input_dim,
+            INPUT_SIZE_0,
+            OUTPUT_SIZE_0,
+            N_WORDS_ROW_0,
+            weight_idx_compact_0,
+            codebooks_0[0],
+            bias_0[0]));
+
     feedForward0 = new CodebookDense(makeCodebookDenseConfig(
-            input_dim, ff_size, INPUT_SIZE_0, OUTPUT_SIZE_0, N_WORDS_ROW_0,
-            weight_idx_compact_0, codebooks_0[0], bias_0[0]));
+            input_dim,
+            ff_size,
+            INPUT_SIZE_1,
+            OUTPUT_SIZE_1,
+            N_WORDS_ROW_1,
+            weight_idx_compact_1,
+            codebooks_1[0],
+            bias_1[0]));
 
     feedForward1 = new CodebookDense(makeCodebookDenseConfig(
-            ff_size, input_dim, INPUT_SIZE_1, OUTPUT_SIZE_1, N_WORDS_ROW_1,
-            weight_idx_compact_1, codebooks_1[0], bias_1[0]));
+            ff_size,
+            input_dim,
+            INPUT_SIZE_2,
+            OUTPUT_SIZE_2,
+            N_WORDS_ROW_2,
+            weight_idx_compact_2,
+            codebooks_2[0],
+            bias_2[0]));
+
+    // feedForward0 = new CodebookDense(makeCodebookDenseConfig(
+    //         input_dim, ff_size, INPUT_SIZE_0, OUTPUT_SIZE_0, N_WORDS_ROW_0,
+    //         weight_idx_compact_0, codebooks_0[0], bias_0[0]));
+
+    // feedForward1 = new CodebookDense(makeCodebookDenseConfig(
+    //         ff_size, input_dim, INPUT_SIZE_1, OUTPUT_SIZE_1, N_WORDS_ROW_1,
+    //         weight_idx_compact_1, codebooks_1[0], bias_1[0]));
 
 
 #else
+    condense = new Dense(num_heads* head_hidden_size, input_dim, weightVector[num_heads * 3]);
     feedForward0 = new Dense(input_dim, ff_size, weightVector[num_heads * 3 + 1]);
     feedForward1 = new Dense(ff_size, input_dim, weightVector[num_heads * 3 + 2]);
 #endif
 
 #if CFG_USE_CODEBOOK_REFERENCE
+    referenceCondense = new uint32_t[pre_seq_len * input_dim >> 2]();
     referenceFF0 = new uint32_t[pre_seq_len * ff_size >> 2]();
     referenceFF1 = new uint32_t[pre_seq_len * input_dim >> 2]();
+    condenseReference = new Dense(num_heads * head_hidden_size, input_dim, weightVector[num_heads * 3]);
     feedForward0Reference = new Dense(input_dim, ff_size, weightVector[num_heads * 3 + 1]);
     feedForward1Reference = new Dense(ff_size, input_dim, weightVector[num_heads * 3 + 2]);
 #endif
@@ -150,6 +188,12 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t *input, uint32_t *o
     // printPackedPreview("condense_out", condense_out, (seq_len * input_dim_) >> 2);
     // printPackedMatrix("condense_out", condense_out, seq_len, input_dim_);
     // savePackedMatrixText(kCondenseDebugPath, condense_out, seq_len, input_dim_);
+
+    #if CFG_USE_CODEBOOK_REFERENCE
+        std::fill(referenceCondense, referenceCondense + (seq_len * input_dim_ >> 2), 0u);
+        condenseReference->compute(seq_len, multihead_out, referenceCondense);
+        comparePackedBuffers("condense_out", referenceCondense, condense_out, seq_len * input_dim_ >> 2);
+    #endif
 
 
     std::cout << "Add Norm"  << std::endl;

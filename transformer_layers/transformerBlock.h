@@ -34,14 +34,17 @@ private:
     uint32_t* intermediateFF;
     uint32_t* intermediateFFBlockWise;
     AddNormalize* addNorm;
-    Dense* condense;
+    // Dense* condense;
     // Dense* feedForward0;
     // Dense* feedForward1;
+    LinearLayer* condense;
     LinearLayer* feedForward0;
     LinearLayer* feedForward1;
 #ifdef USE_CODEBOOK_GEMM
+    LinearLayer* condenseReference; 
     LinearLayer* feedForward0Reference;
     LinearLayer* feedForward1Reference;
+    uint32_t* referenceCondense;
     uint32_t* referenceFF0;
     uint32_t* referenceFF1;
 #endif

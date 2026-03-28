@@ -60,20 +60,6 @@ void saveWeight(int n_head, int qkv, int size, uint32_t *array, const std::strin
     }
 }
 
-// bool tryLoadWeight(int n_head, int qkv, int size, uint32_t *array, const std::string &dir_name) {
-//     std::string filename = dir_name + "/H" + std::to_string(n_head) + "_L" +
-//             std::to_string(qkv) + ".bin";
-//     std::ifstream fin(filename);
-//     if (!fin.is_open()) {
-//         return false;
-//     }
-//     for (int i = 0; i < size; i++) {
-//         fin >> array[i];
-//         // printf("tryLoadWeight: current i, %d, current uint32 array[i],  %u\n", i, array[i]);
-//     }
-//     fin.close();
-//     return true;
-// }
 
 bool tryLoadWeight(int n_head, int qkv, int size, uint32_t *array, const std::string &dir_name) {
     std::string filename = dir_name + "/H" + std::to_string(n_head) + "_L" +
@@ -131,7 +117,7 @@ void test() {
 
     // The directory where the weights and output are saved
     std::string dir_name = "/home/thu/TiC-SAT/weights";
-    std::string notebook_ff_dir = dir_name + "/generated_from_notebook";
+    std::string notebook_weights_dir = dir_name + "/generated_from_notebook";
 #if !CFG_RELOAD_WEIGHT
     std::filesystem::create_directories(dir_name);
 #endif
@@ -208,28 +194,38 @@ void test() {
 
     // Load .bin weights generated from the notebook
     int n = -1; // n=-1 means that we are not saving/loading a head
+    bool condense_loaded_from_notebook = false;
     bool ff0_loaded_from_notebook = false;
     bool ff1_loaded_from_notebook = false;
 
     #if CFG_USE_NOTEBOOK_GENERATED_WEIGHTS
+        printf("Condense/projection layer: trying notebook-generated condense weights\n");
+        condense_loaded_from_notebook = tryLoadWeight(n, 0, NUM_HEAD * D_Q * D_MODEL >> 2, condense_kernel, notebook_weights_dir);
+
         printf("Feed forward layer 0: trying notebook-generated FF0 weights\n");
-        ff0_loaded_from_notebook = tryLoadWeight(n, 1, D_MODEL * D_FF >> 2, ff0_kernel, notebook_ff_dir);
+        ff0_loaded_from_notebook = tryLoadWeight(n, 1, D_MODEL * D_FF >> 2, ff0_kernel, notebook_weights_dir);
 
         printf("Feed forward layer 1: trying notebook-generated FF1 weights\n");
-        ff1_loaded_from_notebook = tryLoadWeight(n, 2, D_FF * D_MODEL >> 2, ff1_kernel, notebook_ff_dir);
+        ff1_loaded_from_notebook = tryLoadWeight(n, 2, D_FF * D_MODEL >> 2, ff1_kernel, notebook_weights_dir);
 
+
+        if (condense_loaded_from_notebook) {
+            std::cout << "Loaded notebook-generated condense weights from " << notebook_weights_dir << std::endl;
+        }
         if (ff0_loaded_from_notebook) {
-            std::cout << "Loaded notebook-generated FF0 weights from " << notebook_ff_dir << std::endl;
+            std::cout << "Loaded notebook-generated FF0 weights from " << notebook_weights_dir << std::endl;
         }
         if (ff1_loaded_from_notebook) {
-            std::cout << "Loaded notebook-generated FF1 weights from " << notebook_ff_dir << std::endl;
+            std::cout << "Loaded notebook-generated FF1 weights from " << notebook_weights_dir << std::endl;
         }
     #endif
 
 #if CFG_RELOAD_WEIGHT
 
-    printf("Condense/projection layer: loading weights of condense layer\n");
-    loadWeight(n, 0, NUM_HEAD * D_Q * D_MODEL >> 2, condense_kernel, dir_name);
+    if (!condense_loaded_from_notebook) {
+        printf("Condense/projection layer: loading original condense weights\n");
+        loadWeight(n, 0, NUM_HEAD * D_Q * D_MODEL >> 2, condense_kernel, dir_name);
+    }
 
     if (!ff0_loaded_from_notebook) {
         printf("Feed forward layer 0: loading original FF0 weights\n");
@@ -244,7 +240,8 @@ void test() {
 #else
 
     // Fresh run after dimension change: generate everything from C code
-    fill_weight(condense_kernel, D_MODEL, NUM_HEAD * D_Q >> 2);
+    // fill_weight(condense_kernel, D_MODEL, NUM_HEAD * D_Q >> 2); // This is the original statement. Probably the dimension is incorrect, requiring further checking
+    fill_weight(condense_kernel, NUM_HEAD * D_Q, D_MODEL >> 2); // Modified by Jerry, suggested by ChatGPT
     fill_weight(ff0_kernel, D_MODEL, D_FF >> 2);
     fill_weight(ff1_kernel, D_FF, D_MODEL >> 2);
 
