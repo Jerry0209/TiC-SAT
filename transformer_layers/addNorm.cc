@@ -35,22 +35,34 @@ void AddNormalize::compute(uint32_t *input, uint32_t *output) {
             int32_t diff = static_cast<int32_t>(*output_ptr++) - mean;
             variance += diff * diff;
         }
-        variance = variance / (int) input_dim_;
-        double sd = sqrt((double) variance);
-        auto sd_inv = (int32_t) ((1<<2)/(sd + 1)); // prevent zero divide! // Assuming that the values are fixed-point with 2 digit of fraction.
+        // variance = variance / (int) input_dim_;
+        // double sd = sqrt((double) variance);
+        // auto sd_inv = (int32_t) ((1<<2)/(sd + 1)); // prevent zero divide! // Assuming that the values are fixed-point with 2 digit of fraction.
 
-        // ===== Debug =====
+        // // ===== Debug =====
         // std::cout << "row " << i << ", mean = " << mean << std::endl;
         // std::cout << "row " << i
         //           << ", variance = " << variance
         //           << ", sd = " << sd
         //           << ", sd_inv = " << sd_inv
         //           << std::endl;
-        // ====================
+        // // ====================
+
+        // output_ptr = (int8_t*) (output + i * (input_dim_ >> 2));
+        // for (int j=0; j< input_dim_; j++){
+        //     *output_ptr = (int8_t) ((*output_ptr - mean) * (sd_inv) >> 2);
+        //     output_ptr ++;
+        // }
+
+        /* Increase the fixed-point scale for integer addNorm */
+        // Doesn't match the output as the notebook LayerNorm
+        variance = variance / (int) input_dim_;
+        double sd = sqrt((double) variance);
+        auto sd_inv = (int32_t)((1 << 8) / (sd + 1));
 
         output_ptr = (int8_t*) (output + i * (input_dim_ >> 2));
         for (int j=0; j< input_dim_; j++){
-            *output_ptr = (int8_t) ((*output_ptr - mean) * (sd_inv) >> 2);
+            *output_ptr = (int8_t)((((*output_ptr - mean) * sd_inv)) >> 8);
             output_ptr ++;
         }
 
