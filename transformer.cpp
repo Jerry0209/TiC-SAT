@@ -218,26 +218,26 @@ void test() {
     uint32_t* condenseRowWise = new uint32_t [NUM_HEAD * D_Q * D_MODEL >> 2];
     blockWise2RowWise(condense_kernel, condenseRowWise, NUM_HEAD * D_Q, D_MODEL >> 2);
     condense_kernel = condenseRowWise;
-    printf("Final condenseRowWise:\n");
-    for (int r = 0; r < NUM_HEAD * D_Q; r++) {
-        for (int c = 0; c < (D_MODEL >> 2); c++) {
-            printf("%u ", condenseRowWise[r * (D_MODEL >> 2) + c]);
-        }
-        printf("\n");
-    }
+    // printf("Final condenseRowWise:\n");
+    // for (int r = 0; r < NUM_HEAD * D_Q; r++) {
+    //     for (int c = 0; c < (D_MODEL >> 2); c++) {
+    //         printf("%u ", condenseRowWise[r * (D_MODEL >> 2) + c]);
+    //     }
+    //     printf("\n");
+    // }
 
-    printf("Final condenseRowWise (unpacked int8):\n");
-    for (int r = 0; r < NUM_HEAD * D_Q; r++) {
-        printf("row %d: ", r);
-        for (int c = 0; c < (D_MODEL >> 2); c++) {
-            uint32_t word = condenseRowWise[r * (D_MODEL >> 2) + c];
-            for (int b = 0; b < 4; b++) {
-                int8_t val = static_cast<int8_t>((word >> (8 * b)) & 0xFF);
-                printf("%d ", val);
-            }
-        }
-        printf("\n");
-    }
+    // printf("Final condenseRowWise (unpacked int8):\n");
+    // for (int r = 0; r < NUM_HEAD * D_Q; r++) {
+    //     printf("row %d: ", r);
+    //     for (int c = 0; c < (D_MODEL >> 2); c++) {
+    //         uint32_t word = condenseRowWise[r * (D_MODEL >> 2) + c];
+    //         for (int b = 0; b < 4; b++) {
+    //             int8_t val = static_cast<int8_t>((word >> (8 * b)) & 0xFF);
+    //             printf("%d ", val);
+    //         }
+    //     }
+    //     printf("\n");
+    // }
 
 
     printf("blockWise2RowWise: ff0\n");
@@ -273,52 +273,52 @@ void test() {
     // }
 
     ff0_kernel = ff0RowWise;
-    printf("Final ff0RowWise:\n");
-    for (int r = 0; r < D_MODEL; r++) {
-        for (int c = 0; c < (D_FF >> 2); c++) {
-            printf("%u ", ff0RowWise[r * (D_FF >> 2) + c]);
-        }
-        printf("\n");
-    }
+    // printf("Final ff0RowWise:\n");
+    // for (int r = 0; r < D_MODEL; r++) {
+    //     for (int c = 0; c < (D_FF >> 2); c++) {
+    //         printf("%u ", ff0RowWise[r * (D_FF >> 2) + c]);
+    //     }
+    //     printf("\n");
+    // }
 
-    printf("Final ff0RowWise (unpacked int8):\n");
-    for (int r = 0; r < D_MODEL; r++) {
-        printf("row %d: ", r);
-        for (int c = 0; c < (D_FF >> 2); c++) {
-            uint32_t word = ff0RowWise[r * (D_FF >> 2) + c];
-            for (int b = 0; b < 4; b++) {
-                int8_t val = static_cast<int8_t>((word >> (8 * b)) & 0xFF);
-                printf("%d ", val);
-            }
-        }
-        printf("\n");
-    }
+    // printf("Final ff0RowWise (unpacked int8):\n");
+    // for (int r = 0; r < D_MODEL; r++) {
+    //     printf("row %d: ", r);
+    //     for (int c = 0; c < (D_FF >> 2); c++) {
+    //         uint32_t word = ff0RowWise[r * (D_FF >> 2) + c];
+    //         for (int b = 0; b < 4; b++) {
+    //             int8_t val = static_cast<int8_t>((word >> (8 * b)) & 0xFF);
+    //             printf("%d ", val);
+    //         }
+    //     }
+    //     printf("\n");
+    // }
 
     
     printf("blockWise2RowWise: ff1\n");
     uint32_t* ff1RowWise = new uint32_t [D_FF * D_MODEL >> 2];
     blockWise2RowWise(ff1_kernel, ff1RowWise, D_FF, D_MODEL >> 2);
     ff1_kernel = ff1RowWise;
-    printf("Final ff1RowWise:\n");
-    for (int r = 0; r < D_FF; r++) {
-        for (int c = 0; c < (D_MODEL >> 2); c++) {
-            printf("%u ", ff1RowWise[r * (D_MODEL >> 2) + c]);
-        }
-        printf("\n");
-    }
+    // printf("Final ff1RowWise:\n");
+    // for (int r = 0; r < D_FF; r++) {
+    //     for (int c = 0; c < (D_MODEL >> 2); c++) {
+    //         printf("%u ", ff1RowWise[r * (D_MODEL >> 2) + c]);
+    //     }
+    //     printf("\n");
+    // }
 
-    printf("Final ff1RowWise (unpacked int8):\n");
-    for (int r = 0; r < D_FF; r++) {
-        printf("row %d: ", r);
-        for (int c = 0; c < (D_MODEL >> 2); c++) {
-            uint32_t word = ff1RowWise[r * (D_MODEL >> 2) + c];
-            for (int b = 0; b < 4; b++) {
-                int8_t val = static_cast<int8_t>((word >> (8 * b)) & 0xFF);
-                printf("%d ", val);
-            }
-        }
-        printf("\n");
-    }
+    // printf("Final ff1RowWise (unpacked int8):\n");
+    // for (int r = 0; r < D_FF; r++) {
+    //     printf("row %d: ", r);
+    //     for (int c = 0; c < (D_MODEL >> 2); c++) {
+    //         uint32_t word = ff1RowWise[r * (D_MODEL >> 2) + c];
+    //         for (int b = 0; b < 4; b++) {
+    //             int8_t val = static_cast<int8_t>((word >> (8 * b)) & 0xFF);
+    //             printf("%d ", val);
+    //         }
+    //     }
+    //     printf("\n");
+    // }
 
 #endif
 
@@ -329,8 +329,6 @@ void test() {
     TransformerBlock selfatten(D_SEQ, D_MODEL, D_Q, NUM_HEAD, D_FF, weightVec, KERNEL_DIM, MAX_COL);
     selfatten.compute(D_SEQ, tensor_in, out); // Compute loop from here
 
-    printOutputPreview(out, D_SEQ * D_MODEL >> 2);
-    saveOutput(D_SEQ * D_MODEL >> 2, out, dir_name);
 }
 
 int main() {
