@@ -63,7 +63,6 @@ echo "  USE_CODEBOOK_GEMM_FLAG=${USE_CODEBOOK_GEMM_FLAG:-0}"
   -IFull_NN/gemm_definitions \
   -DSA_SIZE=4 \
   -DDEVELOP \
-  -DDEBUG_SMALL_MODEL \
   -DCORE_NUM=1 \
   -fopenmp \
   -o transformer.o
@@ -72,7 +71,7 @@ echo "  USE_CODEBOOK_GEMM_FLAG=${USE_CODEBOOK_GEMM_FLAG:-0}"
 # source compile_transformer.sh 
 # USE_CODEBOOK=1 source compile_transformer.sh
 
-
+#   -DDEBUG_SMALL_MODEL \
 #   -DRELOAD_WEIGHT \
 #   -DUSE_NOTEBOOK_GENERATED_WEIGHTS \
 #   -DUSE_CODEBOOK_GEMM \

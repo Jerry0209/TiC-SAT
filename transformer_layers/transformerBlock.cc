@@ -158,8 +158,8 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t *input, uint32_t *o
     std::cout << "Condense"  << std::endl;
     condense->compute(seq_len, multihead_out, condense_out);
     // printPackedPreview("condense_out", condense_out, (seq_len * input_dim_) >> 2);
-    printPackedMatrix("condense_out", condense_out, seq_len, input_dim_);
-    savePackedMatrixText(kCondenseDebugPath, condense_out, seq_len, input_dim_);
+    // printPackedMatrix("condense_out", condense_out, seq_len, input_dim_);
+    // savePackedMatrixText(kCondenseDebugPath, condense_out, seq_len, input_dim_);
 
 
     std::cout << "Add Norm"  << std::endl;
@@ -169,8 +169,8 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t *input, uint32_t *o
     addNorm->compute(input, condense_out);
 #endif
 
-    printPackedMatrix("condense_out_after_addnorm", condense_out, seq_len, input_dim_);
-    savePackedMatrixText(kCondenseAddNormDebugPath, condense_out, seq_len, input_dim_);
+    // printPackedMatrix("condense_out_after_addnorm", condense_out, seq_len, input_dim_);
+    // savePackedMatrixText(kCondenseAddNormDebugPath, condense_out, seq_len, input_dim_);
 
     
     runM5IfAvailable("m5 dumpresetstats");
@@ -179,8 +179,8 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t *input, uint32_t *o
     feedForward0->compute(seq_len, condense_out, intermediateFF);
     // printPackedPreview("ffn0", intermediateFF, seq_len * ff_size_ >> 2); // For debugging
     // savePackedBuffer(kFfn0DebugPath, intermediateFF, seq_len * ff_size_ >> 2);
-    printPackedMatrix("ffn0", intermediateFF, seq_len, ff_size_);
-    savePackedMatrixText(kFfn0DebugPath, intermediateFF, seq_len, ff_size_);    
+    // printPackedMatrix("ffn0", intermediateFF, seq_len, ff_size_);
+    // savePackedMatrixText(kFfn0DebugPath, intermediateFF, seq_len, ff_size_);    
 
 #if CFG_USE_CODEBOOK_REFERENCE
     std::fill(referenceFF0, referenceFF0 + (seq_len * ff_size_ >> 2), 0u);
@@ -192,8 +192,8 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t *input, uint32_t *o
     feedForward1->compute(seq_len, intermediateFF, output);
     // printPackedPreview("ffn1_pre_addnorm", output, seq_len * input_dim_ >> 2);
     // savePackedBuffer(kFfn1DebugPath, output, seq_len * input_dim_ >> 2);
-    printPackedMatrix("ffn1_pre_addnorm", output, seq_len, input_dim_);
-    savePackedMatrixText(kFfn1DebugPath, output, seq_len, input_dim_);  
+    // printPackedMatrix("ffn1_pre_addnorm", output, seq_len, input_dim_);
+    // savePackedMatrixText(kFfn1DebugPath, output, seq_len, input_dim_);  
 
 #if CFG_USE_CODEBOOK_REFERENCE
     std::fill(referenceFF1, referenceFF1 + (seq_len * input_dim_ >> 2), 0u);
@@ -207,8 +207,8 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t *input, uint32_t *o
 #else
     addNorm->compute(condense_out, output);
 #endif
-    printPackedMatrix("ffn1_after_addnorm", output, seq_len, input_dim_);
-    savePackedMatrixText(kFfn1AfterAddNormDebugPath, output, seq_len, input_dim_);
+    // printPackedMatrix("ffn1_after_addnorm", output, seq_len, input_dim_);
+    // savePackedMatrixText(kFfn1AfterAddNormDebugPath, output, seq_len, input_dim_);
     runM5IfAvailable("m5 dumpresetstats");
 
 }

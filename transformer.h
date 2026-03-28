@@ -36,11 +36,11 @@
 // #define D_FF 16
 
 // Medium Menu (Match notebook and codebooked GEMM)
-#define D_Q 8
-#define D_SEQ 8
-#define D_MODEL 16
-#define NUM_HEAD 2
-#define D_FF 32
+// #define D_Q 8
+// #define D_SEQ 8
+// #define D_MODEL 16
+// #define NUM_HEAD 2
+// #define D_FF 32
 
 // Large Menu (Pass)
 // #define D_Q 16
@@ -48,6 +48,13 @@
 // #define D_MODEL 32
 // #define NUM_HEAD 2
 // #define D_FF 4
+
+// Advanced Menu 1
+#define D_Q 16
+#define D_SEQ 32
+#define D_MODEL 64
+#define NUM_HEAD 4
+#define D_FF 128
 
 #else
 #define D_Q 64
