@@ -32,6 +32,7 @@
 namespace {
 constexpr const char *kFfn0DebugPath = "/home/thu/TiC-SAT/weights/ffn0_output.bin";
 constexpr const char *kFfn1DebugPath = "/home/thu/TiC-SAT/weights/ffn1_output_pre_addnorm.bin";
+constexpr const char *kCondenseAddNormDebugPath = "/home/thu/TiC-SAT/weights/condense_out_after_addnorm.txt";
 
 
 
@@ -40,6 +41,55 @@ void runM5IfAvailable(const char *command) {
     if (std::system("command -v m5 >/dev/null 2>&1") == 0) {
         std::system(command);
     }
+}
+
+/* Print the entire matrix for debugging */
+void printPackedMatrix(const char *label,
+                       const uint32_t *buffer,
+                       std::size_t rows,
+                       std::size_t cols) {
+    std::size_t packed_cols = (cols + 3) / 4;
+
+    std::cout << label << " full matrix (" << rows << " x " << cols << "):" << std::endl;
+    for (std::size_t r = 0; r < rows; r++) {
+        std::cout << "row " << r << ": ";
+        for (std::size_t c = 0; c < cols; c++) {
+            uint32_t word = buffer[r * packed_cols + (c / 4)];
+            int8_t value = static_cast<int8_t>((word >> (8 * (c % 4))) & 0xFF);
+            std::cout << static_cast<int>(value);
+            if (c + 1 != cols) {
+                std::cout << " ";
+            }
+        }
+        std::cout << std::endl;
+    }
+}
+
+void savePackedMatrixText(const char *filename,
+                          const uint32_t *buffer,
+                          std::size_t rows,
+                          std::size_t cols) {
+    std::size_t packed_cols = (cols + 3) / 4;
+
+    std::ofstream fout(filename);
+    if (!fout.is_open()) {
+        std::cout << filename << " Not saved" << std::endl;
+        return;
+    }
+
+    for (std::size_t r = 0; r < rows; r++) {
+        for (std::size_t c = 0; c < cols; c++) {
+            uint32_t word = buffer[r * packed_cols + (c / 4)];
+            int8_t value = static_cast<int8_t>((word >> (8 * (c % 4))) & 0xFF);
+            fout << static_cast<int>(value);
+            if (c + 1 != cols) {
+                fout << " ";
+            }
+        }
+        fout << "\n";
+    }
+
+    fout.close();
 }
 
 /* Unpack the results and print 
@@ -239,6 +289,10 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t *input, uint32_t *o
     addNorm->compute(input, condense_out);
 #endif
 
+    printPackedMatrix("condense_out_after_addnorm", condense_out, seq_len, input_dim_);
+    savePackedMatrixText(kCondenseAddNormDebugPath, condense_out, seq_len, input_dim_);
+
+    
     runM5IfAvailable("m5 dumpresetstats");
 
     std::cout << "Feed Forward 0"  << std::endl;

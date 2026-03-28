@@ -7,7 +7,7 @@
 #include <codebooks_def.h>
 
 #define INPUT_SIZE_0      8
-#define OUTPUT_SIZE_0     4
+#define OUTPUT_SIZE_0     8
 
 // Number of 32-bits words needed to store all the indexes
 // #define N_WORDS_ROW_0 ((INPUT_SIZE_0) / (IDXS_PER_WORD))
@@ -16,37 +16,41 @@
 
 static const int8_t codebooks_[N_LEARNERS][CB_SIZE] = {
 	{
-		0,
+		-1,
+		-1,
 		0,
 		-1,
-		1,
-		1,
-		1,
+		0,
 		1,
 		0,
+		1,
 	},
 };
 
 
 
 static const int8_t codebook_interleaved_[CB_SIZE * N_LEARNERS] = {
-	0,
+	-1,
+	-1,
 	0,
 	-1,
-	1,
-	1,
-	1,
+	0,
 	1,
 	0,
+	1,
 };
 
 
 
 static uint32_t weight_idx_compact_0[OUTPUT_SIZE_0 * N_WORDS_ROW_0] = {
-	0b011110011010101110101101,
 	0b000100110010100010000111,
 	0b001001101011000011001110,
 	0b011110011011001100001000,
+	0b000101010110111100011110,
+	0b101101101001011111001011,
+	0b011001001110100101011001,
+	0b110111110101011101001001,
+	0b100111101000011110101111,
 };
 
 
@@ -64,6 +68,10 @@ static float bias_0[N_LEARNERS][OUTPUT_SIZE_0] = {
 		0.47228078846901406,
 		0.3887505167779042,
 		0.26210622617823776,
+		0.5506676052501416,
+		0.12554447458683765,
+		0.26293018368169635,
+		0.32972565896432254,
 	},
 };
 
@@ -73,6 +81,10 @@ static float bias_interleaved_0[N_LEARNERS * OUTPUT_SIZE_0] = {
 	0.47228078846901406,
 	0.3887505167779042,
 	0.26210622617823776,
+	0.5506676052501416,
+	0.12554447458683765,
+	0.26293018368169635,
+	0.32972565896432254,
 };
 
 #endif

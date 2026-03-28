@@ -82,7 +82,10 @@ void AddNormalize::computeRearranged(uint32_t *input, uint32_t *output) {
         output_ptr = (int8_t*) output + i*kernel_dim_;
         for (int j =0; j< input_dim_ / kernel_dim_; j++){
             for (int k=0; k< kernel_dim_; k++) {
-                variance+= (*(output_ptr+k) - mean) ^ 2; // Assuming that the values are fixed-point with 2 digit of fraction.
+                // variance+= (*(output_ptr+k) - mean) ^ 2; // Assuming that the values are fixed-point with 2 digit of fraction.
+                /* Fix bug: variance calculation */
+                int32_t diff = static_cast<int32_t>(*(output_ptr+k)) - mean;
+                variance += diff * diff;
             }
             output_ptr += seq_len_* kernel_dim_;
         }

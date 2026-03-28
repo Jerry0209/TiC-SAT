@@ -25,7 +25,7 @@
 
 #define USE_F32   1
 
-#define USE_BIAS
+
 
 #define SAME_SEQ    1
 
