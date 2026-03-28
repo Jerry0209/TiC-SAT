@@ -1,0 +1,29 @@
+#pragma once
+
+#ifdef RELOAD_WEIGHT
+#define CFG_RELOAD_WEIGHT 1
+#else
+#define CFG_RELOAD_WEIGHT 0
+#endif
+
+#if CFG_RELOAD_WEIGHT && defined(USE_NOTEBOOK_GENERATED_WEIGHTS)
+#define CFG_USE_NOTEBOOK_GENERATED_WEIGHTS 1
+#else
+#define CFG_USE_NOTEBOOK_GENERATED_WEIGHTS 0
+#endif
+
+#if CFG_RELOAD_WEIGHT && defined(USE_CODEBOOK_GEMM)
+#define CFG_USE_CODEBOOK_GEMM 1
+#else
+#define CFG_USE_CODEBOOK_GEMM 0
+#endif
+
+#if CFG_USE_CODEBOOK_GEMM
+#define CFG_USE_CODEBOOK_REFERENCE 1
+#else
+#define CFG_USE_CODEBOOK_REFERENCE 0
+#endif
+
+#if CFG_USE_CODEBOOK_GEMM && !CFG_USE_NOTEBOOK_GENERATED_WEIGHTS
+#error "USE_CODEBOOK_GEMM requires USE_NOTEBOOK_GENERATED_WEIGHTS, otherwise Dense reference comparison is meaningless."
+#endif

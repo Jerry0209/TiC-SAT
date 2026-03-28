@@ -19,13 +19,25 @@ fi
 export A64CXX
 export A64SYSROOT="$($A64CXX -print-sysroot 2>/dev/null || true)"
 
+
 EXTRA_DEFS=""
-if [ "${USE_CODEBOOK:-0}" = "1" ]; then
-  EXTRA_DEFS="$EXTRA_DEFS -DUSE_CODEBOOK"
-  echo "Compiling with USE_CODEBOOK enabled"
-else
-  echo "Compiling with notebook/generated FFN bin loading enabled"
+
+if [ "${RELOAD_WEIGHT_FLAG:-1}" = "1" ]; then
+  EXTRA_DEFS="$EXTRA_DEFS -DRELOAD_WEIGHT"
 fi
+
+if [ "${USE_NOTEBOOK_GENERATED_WEIGHTS_FLAG:-1}" = "1" ]; then
+  EXTRA_DEFS="$EXTRA_DEFS -DUSE_NOTEBOOK_GENERATED_WEIGHTS"
+fi
+
+if [ "${USE_CODEBOOK_GEMM_FLAG:-0}" = "1" ]; then
+  EXTRA_DEFS="$EXTRA_DEFS -DUSE_CODEBOOK_GEMM"
+fi
+
+echo "Compile options:"
+echo "  RELOAD_WEIGHT_FLAG=${RELOAD_WEIGHT_FLAG:-1}"
+echo "  USE_NOTEBOOK_GENERATED_WEIGHTS_FLAG=${USE_NOTEBOOK_GENERATED_WEIGHTS_FLAG:-1}"
+echo "  USE_CODEBOOK_GEMM_FLAG=${USE_CODEBOOK_GEMM_FLAG:-0}"
 
 # Symbolic link to required library
 # mkdir -p "$A64SYSROOT/lib"
@@ -39,18 +51,18 @@ fi
 # ln -sf "$CONDA_PREFIX/lib/gcc/aarch64-conda-linux-gnu/13.4.0/libgcc_s.so.1" \
 #        "$A64SYSROOT/lib/libgcc_s.so.1"
 
-"$A64CXX" -O2 -Wall \
+"$A64CXX" -std=c++17 -O2 -Wall \
   transformer.cpp \
   transformer_layers/*.cc \
   Full_NN/src/gemm_exec.c \
   accelerator/smm_gem.cpp \
   accelerator/systolic_m2m.cc \
   $EXTRA_DEFS \
+  -I. \
   -IFull_NN/inc \
   -IFull_NN/gemm_definitions \
   -DSA_SIZE=4 \
   -DDEVELOP \
-  -DRELOAD_WEIGHT \
   -DDEBUG_SMALL_MODEL \
   -DCORE_NUM=1 \
   -fopenmp \
@@ -59,5 +71,27 @@ fi
 # conda activate gem5_env
 # source compile_transformer.sh 
 # USE_CODEBOOK=1 source compile_transformer.sh
+
+
+#   -DRELOAD_WEIGHT \
+#   -DUSE_NOTEBOOK_GENERATED_WEIGHTS \
+#   -DUSE_CODEBOOK_GEMM \
+
+
+# New weights
+# RELOAD_WEIGHT_FLAG=0 USE_NOTEBOOK_GENERATED_WEIGHTS_FLAG=0 USE_CODEBOOK_GEMM_FLAG=0 source compile_transformer.sh
+
+# Old weights, original
+# RELOAD_WEIGHT_FLAG=1 USE_NOTEBOOK_GENERATED_WEIGHTS_FLAG=0 USE_CODEBOOK_GEMM_FLAG=0 source compile_transformer.sh
+
+# Old weights, notebook generated
+# RELOAD_WEIGHT_FLAG=1 USE_NOTEBOOK_GENERATED_WEIGHTS_FLAG=1 USE_CODEBOOK_GEMM_FLAG=0 source compile_transformer.sh
+
+# Old weights, codebooked GEMM
+# RELOAD_WEIGHT_FLAG=1 USE_NOTEBOOK_GENERATED_WEIGHTS_FLAG=1 USE_CODEBOOK_GEMM_FLAG=1 source compile_transformer.sh
+
+
+
 # qemu-aarch64 -L "$A64SYSROOT" ./transformer.o # Run this command to run Transformer with aarch64 on eslsrv12
 # cp ~/TiC-SAT-Jerry/transformer.o /home/jerry/gem5/shared_folder/
+

@@ -14,12 +14,12 @@
 // #define NUM_HEAD 2
 // #define D_FF 4
 
-// Smaller Smaller Menu
-#define D_Q 4
-#define D_SEQ 2
-#define D_MODEL 8
-#define NUM_HEAD 2
-#define D_FF 8
+// Smaller Smaller Menu (Match notebook)
+// #define D_Q 4
+// #define D_SEQ 2
+// #define D_MODEL 8
+// #define NUM_HEAD 2
+// #define D_FF 8
 
 // Smaller Menu (Pass)
 // #define D_Q 4
@@ -28,19 +28,19 @@
 // #define NUM_HEAD 2
 // #define D_FF 4
 
-// Small Menu
+// Small Menu (Match notebook)
 // #define D_Q 4
 // #define D_SEQ 8
 // #define D_MODEL 8
 // #define NUM_HEAD 2
 // #define D_FF 16
 
-// Medium Menu
-// #define D_Q 8
-// #define D_SEQ 8
-// #define D_MODEL 16
-// #define NUM_HEAD 2
-// #define D_FF 32
+// Medium Menu (Match notebook)
+#define D_Q 8
+#define D_SEQ 8
+#define D_MODEL 16
+#define NUM_HEAD 2
+#define D_FF 32
 
 // Large Menu (Pass)
 // #define D_Q 16
