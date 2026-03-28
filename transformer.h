@@ -49,14 +49,22 @@
 // #define NUM_HEAD 2
 // #define D_FF 4
 
-// Advanced Menu 1
+// Advanced Menu 1 (Match codebooked GEMM)
+// #define D_Q 16
+// #define D_SEQ 32
+// #define D_MODEL 64
+// #define NUM_HEAD 4
+// #define D_FF 128
+
+// Advanced Menu 2 (Match codebooked GEMM)
 #define D_Q 16
-#define D_SEQ 32
-#define D_MODEL 64
-#define NUM_HEAD 4
-#define D_FF 128
+#define D_SEQ 64
+#define D_MODEL 128
+#define NUM_HEAD 8
+#define D_FF 256
 
 #else
+// Boss Menu (Match codebooked GEMM)
 #define D_Q 64
 #define D_SEQ 512
 #define D_MODEL 768

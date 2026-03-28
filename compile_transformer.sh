@@ -61,8 +61,9 @@ echo "  USE_CODEBOOK_GEMM_FLAG=${USE_CODEBOOK_GEMM_FLAG:-0}"
   -I. \
   -IFull_NN/inc \
   -IFull_NN/gemm_definitions \
-  -DSA_SIZE=4 \
+  -DSA_SIZE=16 \
   -DDEVELOP \
+  -DDEBUG_SMALL_MODEL \
   -DCORE_NUM=1 \
   -fopenmp \
   -o transformer.o
