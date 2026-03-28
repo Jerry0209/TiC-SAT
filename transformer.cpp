@@ -66,7 +66,7 @@ bool tryLoadWeight(int n_head, int qkv, int size, uint32_t *array, const std::st
     }
     for (int i = 0; i < size; i++) {
         fin >> array[i];
-        printf("tryLoadWeight: current i, %d, current uint32 array[i],  %u\n", i, array[i]);
+        // printf("tryLoadWeight: current i, %d, current uint32 array[i],  %u\n", i, array[i]);
     }
     fin.close();
     return true;
@@ -80,44 +80,18 @@ void loadWeight(int n_head, int qkv, int size, uint32_t *array, const std::strin
     }
 }
 
-// Jerry: print the output for debugging
-void printOutputPreview(const uint32_t *out, int size) {
-    int preview = std::min(size, 8);
-    std::cout << "Output preview (first " << preview << " packed words):" << std::endl;
-    for (int i = 0; i < preview; i++) {
-        std::cout << "out[" << i << "] = " << out[i] << " -> [";
-        for (int j = 0; j < 4; j++) {
-            int8_t value = static_cast<int8_t>((out[i] >> (8 * j)) & 0xFF);
-            std::cout << static_cast<int>(value);
-            if (j != 3) {
-                std::cout << ", ";
-            }
-        }
-        std::cout << "]" << std::endl;
-    }
-}
-
-// Jerry: save the output for debugging
-void saveOutput(int size, const uint32_t *array, const std::string &dir_name) {
-    std::string filename = dir_name + "/output.bin";
-    std::ofstream fout(filename);
-    if (fout.is_open()) {
-        for (int i = 0; i < size; i++) {
-            fout << array[i] << " ";
-        }
-        fout.close();
-    } else {
-        std::cout << filename + " Not saved" << std::endl;
-    }
-}
 
 void test() {
     std::cout << "Welcome to TiC-SAT" << std::endl;
+    
 #ifdef BWMA
     std::cout << "BWMA method" << std::endl;
 #else
     std::cout<<"RWMA method" << std::endl;
 #endif
+    std::cout << "SA_SIZE = " << SA_SIZE << std::endl;
+    std::cout << "KERNEL_DIM = " << KERNEL_DIM << std::endl;
+    std::cout << "MAX_COL = " << MAX_COL << std::endl;
 
     // The directory where the weights and output are saved
     std::string dir_name = "/home/thu/TiC-SAT/weights";
@@ -270,19 +244,34 @@ void test() {
     uint32_t* ff0RowWise = new uint32_t [D_MODEL * D_FF >> 2];
     blockWise2RowWise(ff0_kernel, ff0RowWise, D_MODEL, D_FF >> 2);
 
-    static uint32_t ff0RowWise_correct[16] = {
-        65281, 4278190080,
-        4294967040, 4294902271,
-        4278255615, 4278255615,
-        16842496, 4278255616,
-        4278321151, 16843263,
-        131071, 4294967040,
-        4278321151, 65537,
-        4278190337, 66047
-    };
-
+    // static uint32_t ff0RowWise_correct[16] = {
+    //     65281, 4278190080,
+    //     4294967040, 4294902271,
+    //     4278255615, 4278255615,
+    //     16842496, 4278255616,
+    //     4278321151, 16843263,
+    //     131071, 4294967040,
+    //     4278321151, 65537,
+    //     4278190337, 66047
+    // };
     
-    std::memcpy(ff0RowWise, ff0RowWise_correct, 16 * sizeof(uint32_t));
+    // std::memcpy(ff0RowWise, ff0RowWise_correct, 16 * sizeof(uint32_t));
+
+    // static uint32_t ff0RowWise_for_RWMA[16] = {
+    //     33554176, 4294902015,
+    //     65280, 65793,
+    //     4294967295, 33554431,
+    //     16711681, 33554431,
+    //     4294967295, 65281,
+    //     16842496, 16908033,
+    //     16711936, 16842497,
+    //     16776960, 4278255871
+    // };
+
+    // for (int i = 0; i < 16; i++) {
+    //     ff0RowWise[i] = ff0RowWise_for_RWMA[i];
+    // }
+
     ff0_kernel = ff0RowWise;
     printf("Final ff0RowWise:\n");
     for (int r = 0; r < D_MODEL; r++) {

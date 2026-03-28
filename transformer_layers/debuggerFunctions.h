@@ -10,6 +10,7 @@
 #include <cstdint>
 
 
+
 void print_weight(uint32_t* kernel, int n_row, int n_col);
 void blockWise2RowWise(const uint32_t * blockWise, uint32_t* rowWise, int n_row, int n_col);
 void rowWise2BlockWise(const uint32_t* rowWise, uint32_t* blockWise, int n_row, int n_col);
@@ -17,5 +18,34 @@ void write_weight_to_file(const std::string& filename, uint32_t* kernel, int n_r
 void read_weight_from_file(const std::string& filename, uint32_t* kernel, int n_row, int n_col);
 void interleave_hidden_flag(uint32_t* kernel, int n_row, int n_col, uint32_t hidden_flag);
 void interleave_hidden_flag_zero_free(uint32_t*& kernel, int n_row, int n_col, uint32_t hidden_flag);
+void printOutputPreview(const uint32_t *out, int size);
+void saveOutput(int size, const uint32_t *array, const std::string &dir_name);
+
+// New debug helpers moved from transformerBlock.cc
+
+void printPackedMatrix(const char *label,
+                       const uint32_t *buffer,
+                       std::size_t rows,
+                       std::size_t cols);
+
+void savePackedMatrixText(const char *filename,
+                          const uint32_t *buffer,
+                          std::size_t rows,
+                          std::size_t cols);
+
+void printPackedPreview(const char *label,
+                        const uint32_t *buffer,
+                        std::size_t packed_size);
+
+void savePackedBuffer(const char *filename,
+                      const uint32_t *buffer,
+                      std::size_t packed_size);
+
+int8_t unpackPackedValue(const uint32_t *buffer, std::size_t elem_idx);
+
+void comparePackedBuffers(const char *label,
+                          const uint32_t *dense_reference,
+                          const uint32_t *candidate,
+                          std::size_t packed_size);
 
 #endif //FVLLMONTITRANSFORMER_DEBUGGERFUNCTIONS_H
