@@ -20,16 +20,11 @@
 #undef codebook_interleaved_
 #undef codebooks_
 
-#if __has_include("../Full_NN/gemm_definitions/gemm_header_1.h")
 #define codebooks_ codebooks_1
 #define codebook_interleaved_ codebook_interleaved_1
 #include "../Full_NN/gemm_definitions/gemm_header_1.h"
 #undef codebook_interleaved_
 #undef codebooks_
-#define TIC_SAT_HAS_CODEBOOK_FF1 1
-#else
-#define TIC_SAT_HAS_CODEBOOK_FF1 0
-#endif
 #endif
 
 namespace {
@@ -114,14 +109,10 @@ TransformerBlock::TransformerBlock(std::size_t pre_seq_len, std::size_t input_di
             input_dim, ff_size, INPUT_SIZE_0, OUTPUT_SIZE_0, N_WORDS_ROW_0,
             weight_idx_compact_0, codebooks_0[0], bias_0[0]));
 
-#if TIC_SAT_HAS_CODEBOOK_FF1
     feedForward1 = new CodebookDense(makeCodebookDenseConfig(
             ff_size, input_dim, INPUT_SIZE_1, OUTPUT_SIZE_1, N_WORDS_ROW_1,
             weight_idx_compact_1, codebooks_1[0], bias_1[0]));
-#else
-    std::cout << "Codebook header for FF1 not found; falling back to Dense." << std::endl;
-    feedForward1 = new Dense(ff_size, input_dim, weightVector[num_heads * 3 + 2]);
-#endif
+
 
 #else
     feedForward0 = new Dense(input_dim, ff_size, weightVector[num_heads * 3 + 1]);
