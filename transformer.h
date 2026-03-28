@@ -35,7 +35,7 @@
 // #define NUM_HEAD 2
 // #define D_FF 16
 
-// Medium Menu (Match notebook)
+// Medium Menu (Match notebook and codebooked GEMM)
 #define D_Q 8
 #define D_SEQ 8
 #define D_MODEL 16

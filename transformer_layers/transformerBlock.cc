@@ -33,6 +33,7 @@
 #endif
 
 namespace {
+constexpr const char *kCondenseDebugPath = "/home/thu/TiC-SAT/weights/condense_out_pre_addnorm.txt";
 constexpr const char *kCondenseAddNormDebugPath = "/home/thu/TiC-SAT/weights/condense_out_after_addnorm.txt";
 // constexpr const char *kFfn0DebugPath = "/home/thu/TiC-SAT/weights/ffn0_output.bin";
 // constexpr const char *kFfn1DebugPath = "/home/thu/TiC-SAT/weights/ffn1_output_pre_addnorm.bin";
@@ -75,7 +76,7 @@ CodebookDenseConfig makeCodebookDenseConfig(std::size_t expected_input_size,
     config.bias = nullptr;
     config.input_dequant_scale = 1.0f;
     config.output_quant_scale = 1.0f;
-    config.reverse_input_groups_of_4 = true;
+    config.reverse_input_groups_of_4 = false;
     return config;
 }
 #endif
@@ -90,7 +91,8 @@ TransformerBlock::TransformerBlock(std::size_t pre_seq_len, std::size_t input_di
     input_dim_ = input_dim;
     ff_size_ = ff_size;
 
-    for (int n =0; n< num_heads; n++){
+    // for (int n =0; n< num_heads; n++){
+    for (std::size_t n = 0; n < num_heads; n++) {
         selfatten[n] = new SingleHeadSelfAttn(pre_seq_len, input_dim, head_hidden_size, weightVector+n*3,
                                               kernelDim, maxCol);
     }
@@ -141,7 +143,8 @@ TransformerBlock::~TransformerBlock() = default;
 
 void TransformerBlock::compute(std::size_t seq_len, uint32_t *input, uint32_t *output) {
     runM5IfAvailable("m5 resetstats");
-    for (int n=0; n<num_heads_; n++){
+    // for (int n=0; n<num_heads_; n++){
+    for (std::size_t n = 0; n < num_heads_; n++) {
         std::cout << "Head : " << n << std::endl;
         selfatten[n]->compute(seq_len, input, multihead_out + n * (seq_len * head_hidden_size_ >> 2));
     }
@@ -156,7 +159,7 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t *input, uint32_t *o
     condense->compute(seq_len, multihead_out, condense_out);
     // printPackedPreview("condense_out", condense_out, (seq_len * input_dim_) >> 2);
     printPackedMatrix("condense_out", condense_out, seq_len, input_dim_);
-    savePackedMatrixText("your_path_here.txt", condense_out, seq_len, input_dim_);
+    savePackedMatrixText(kCondenseDebugPath, condense_out, seq_len, input_dim_);
 
 
     std::cout << "Add Norm"  << std::endl;

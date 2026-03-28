@@ -286,7 +286,11 @@ void CodebookDense::runCompactGemm(std::size_t seq_len, const uint32_t *input, u
 
     std::vector<int8_t> output_int8(seq_len * output_size_, 0);
     for (std::size_t i = 0; i < output_acc.size(); i++) {
-        output_int8[i] = clampInt32ToInt8(output_acc[i]);
+        // output_int8[i] = clampInt32ToInt8(output_acc[i]);
+        // Match the current Dense / RWMA path behavior exactly.
+        // Do NOT saturate here during reference validation, because the Dense path
+        // effectively wraps on int8 cast for out-of-range accumulators.
+        output_int8[i] = static_cast<int8_t>(output_acc[i]);
     }
 
     packInt8(output_int8, output); // Pack to 32-bit words and output

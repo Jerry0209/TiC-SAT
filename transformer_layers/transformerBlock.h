@@ -39,7 +39,7 @@ private:
     // Dense* feedForward1;
     LinearLayer* feedForward0;
     LinearLayer* feedForward1;
-#ifdef USE_CODEBOOK
+#ifdef USE_CODEBOOK_GEMM
     LinearLayer* feedForward0Reference;
     LinearLayer* feedForward1Reference;
     uint32_t* referenceFF0;
