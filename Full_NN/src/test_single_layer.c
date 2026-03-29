@@ -147,8 +147,8 @@ static void run_single_layer_test(const std::string& layer_name,
     std::cout << "input_dim_test = " << in_dim << "\n";
     std::cout << "output_dim_test = " << out_dim << "\n\n";
 
-    printInt8Matrix(input_int8, seq_len, in_dim, "input_int8");
-    printInt8Matrix(output_int8, seq_len, out_dim, "output_int8");
+    // printInt8Matrix(input_int8, seq_len, in_dim, "input_int8");
+    // printInt8Matrix(output_int8, seq_len, out_dim, "output_int8");
 
     printPythonMatrix(input_int8, seq_len, in_dim, "input_matrix_test");
     printPythonMatrix(output_int8, seq_len, out_dim, "output_matrix_test");
