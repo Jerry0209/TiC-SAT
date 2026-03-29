@@ -153,15 +153,72 @@ void test() {
         volatile auto key_kernel = new uint32_t[D_Q * D_MODEL >> 2]();
         volatile auto value_kernel = new uint32_t[D_Q * D_MODEL >> 2]();
 
+    // for (int n = 0; n < NUM_HEAD; n++) {
+    //     uint32_t* query_kernel = new uint32_t[D_Q * D_MODEL >> 2]();
+    //     uint32_t* key_kernel = new uint32_t[D_Q * D_MODEL >> 2]();
+    //     uint32_t* value_kernel = new uint32_t[D_Q * D_MODEL >> 2]();
+
+        bool q_loaded_from_notebook = false;
+        bool k_loaded_from_notebook = false;
+        bool v_loaded_from_notebook = false;
+
+#if CFG_USE_NOTEBOOK_GENERATED_WEIGHTS
+        printf("Head %d : trying notebook-generated Q/K/V weights\n", n);
+
+        q_loaded_from_notebook = tryLoadWeight(
+            n, 0, head_qkv_size, query_kernel, notebook_weights_dir);
+
+        k_loaded_from_notebook = tryLoadWeight(
+            n, 1, head_qkv_size, key_kernel, notebook_weights_dir);
+
+        v_loaded_from_notebook = tryLoadWeight(
+            n, 2, head_qkv_size, value_kernel, notebook_weights_dir);
+
+        if (q_loaded_from_notebook) {
+            std::cout << "Loaded notebook-generated Q weights for head "
+                    << n << " from " << notebook_weights_dir << std::endl;
+        }
+        if (k_loaded_from_notebook) {
+            std::cout << "Loaded notebook-generated K weights for head "
+                    << n << " from " << notebook_weights_dir << std::endl;
+        }
+        if (v_loaded_from_notebook) {
+            std::cout << "Loaded notebook-generated V weights for head "
+                    << n << " from " << notebook_weights_dir << std::endl;
+        }
+#endif
+
+// #if CFG_RELOAD_WEIGHT
+//         printf("Head %d : Q, K, V weight matrix: loading weights of Q, K, V kernels\n", n);
+//         loadWeight(n, 0, head_qkv_size, query_kernel, dir_name);
+//         loadWeight(n, 1, head_qkv_size, key_kernel, dir_name);
+//         loadWeight(n, 2, head_qkv_size, value_kernel, dir_name);
+// #else
+//         fill_weight(query_kernel, D_MODEL, D_Q >> 2);
+//         fill_weight(key_kernel, D_MODEL, D_Q >> 2);
+//         fill_weight(value_kernel,  D_MODEL, D_Q >> 2);
+
+//         saveWeight(n, 0, head_qkv_size, query_kernel, dir_name);
+//         saveWeight(n, 1, head_qkv_size, key_kernel, dir_name);
+//         saveWeight(n, 2, head_qkv_size, value_kernel, dir_name);
+// #endif
+
 #if CFG_RELOAD_WEIGHT
         printf("Head %d : Q, K, V weight matrix: loading weights of Q, K, V kernels\n", n);
-        loadWeight(n, 0, head_qkv_size, query_kernel, dir_name);
-        loadWeight(n, 1, head_qkv_size, key_kernel, dir_name);
-        loadWeight(n, 2, head_qkv_size, value_kernel, dir_name);
+
+        if (!q_loaded_from_notebook) {
+            loadWeight(n, 0, head_qkv_size, query_kernel, dir_name);
+        }
+        if (!k_loaded_from_notebook) {
+            loadWeight(n, 1, head_qkv_size, key_kernel, dir_name);
+        }
+        if (!v_loaded_from_notebook) {
+            loadWeight(n, 2, head_qkv_size, value_kernel, dir_name);
+        }
 #else
         fill_weight(query_kernel, D_MODEL, D_Q >> 2);
         fill_weight(key_kernel, D_MODEL, D_Q >> 2);
-        fill_weight(value_kernel,  D_MODEL, D_Q >> 2);
+        fill_weight(value_kernel, D_MODEL, D_Q >> 2);
 
         saveWeight(n, 0, head_qkv_size, query_kernel, dir_name);
         saveWeight(n, 1, head_qkv_size, key_kernel, dir_name);
@@ -171,6 +228,7 @@ void test() {
 #ifndef BWMA
         // By default, the saved weights are in block-wise format
         // We need to convert them to row-wise format
+        // Dense and reference paths expect row-wise layout in RWMA mode
         uint32_t* queryRowWise = new uint32_t [D_MODEL * D_Q >> 2];
         blockWise2RowWise(query_kernel, queryRowWise, D_MODEL, D_Q >> 2);
         query_kernel = queryRowWise;

@@ -93,6 +93,40 @@
 
 /* Flexible configuration of the number of heads and codebooked GEMM */
 
+namespace {
+
+int8_t unpackPackedInt8(const uint32_t* packed, std::size_t elem_idx) {
+    std::size_t word_idx = elem_idx / 4;
+    std::size_t byte_idx = elem_idx % 4;
+    uint32_t word = packed[word_idx];
+    return static_cast<int8_t>((word >> (byte_idx * 8)) & 0xFF);
+}
+
+void printPackedTensorAsPythonList(const std::string& var_name,
+                                   const uint32_t* packed,
+                                   std::size_t rows,
+                                   std::size_t cols) {
+    std::cout << var_name << " = [\n";
+    for (std::size_t r = 0; r < rows; ++r) {
+        std::cout << "    [";
+        for (std::size_t c = 0; c < cols; ++c) {
+            int v = static_cast<int>(unpackPackedInt8(packed + r * (cols / 4), c));
+            std::cout << v;
+            if (c + 1 != cols) {
+                std::cout << ", ";
+            }
+        }
+        std::cout << "]";
+        if (r + 1 != rows) {
+            std::cout << ",";
+        }
+        std::cout << "\n";
+    }
+    std::cout << "]\n";
+}
+
+}
+
 SingleHeadSelfAttn::SingleHeadSelfAttn(std::size_t head_idx,
                                        std::size_t pre_seq_len,
                                        std::size_t input_dim,
@@ -105,6 +139,7 @@ SingleHeadSelfAttn::SingleHeadSelfAttn(std::size_t head_idx,
     head_hidden_size_ = head_hidden_size;
     kernel_size_ = kernel_dim;
     max_col_ = max_col;
+    input_dim_ = input_dim;
 
     const std::string q_name = "q_h" + std::to_string(head_idx_);
     const std::string k_name = "k_h" + std::to_string(head_idx_);
@@ -161,6 +196,25 @@ SingleHeadSelfAttn::~SingleHeadSelfAttn() {
 }
 
 void SingleHeadSelfAttn::compute(std::size_t seq_len, uint32_t* input, uint32_t* output) {
+
+    // Debug for head 0
+    static bool dumped_input_h0 = false;
+    static bool dumped_q_h0_outputs = false;
+
+    const std::size_t rows_to_dump = std::min<std::size_t>(seq_len, 2);
+
+    if (head_idx_ == 0 && !dumped_input_h0) {
+        dumped_input_h0 = true;
+
+        std::size_t rows_to_dump = std::min<std::size_t>(seq_len, 2);
+
+        std::cout << "\n===== DEBUG self attention input for head 0 =====\n";
+        std::cout << "seq_len = " << seq_len << "\n";
+        std::cout << "input_dim = " << input_dim_ << "\n";
+        printPackedTensorAsPythonList("input_matrix_test", input, rows_to_dump, input_dim_);
+        std::cout << "===== END DEBUG =====\n\n";
+    }
+    
     query_layer_->compute(seq_len, input, query_layer_out_);
     key_layer_->compute(seq_len, input, key_layer_out_);
     value_layer_->compute(seq_len, input, value_layer_out_);
@@ -174,6 +228,16 @@ void SingleHeadSelfAttn::compute(std::size_t seq_len, uint32_t* input, uint32_t*
     query_reference_->compute(seq_len, input, query_reference_out_);
     key_reference_->compute(seq_len, input, key_reference_out_);
     value_reference_->compute(seq_len, input, value_reference_out_);
+
+    // Print q_h0 outputs only once, after both paths have been computed.
+    if (head_idx_ == 0 && !dumped_q_h0_outputs) {
+        dumped_q_h0_outputs = true;
+
+        std::cout << "\n===== DEBUG q_h0 outputs =====\n";
+        printPackedTensorAsPythonList("q_h0_cpp_codebook", query_layer_out_, rows_to_dump, head_hidden_size_);
+        printPackedTensorAsPythonList("q_h0_cpp_dense_ref", query_reference_out_, rows_to_dump, head_hidden_size_);
+        std::cout << "===== END q_h0 OUTPUT DEBUG =====\n\n";
+    }
 
     comparePackedBuffers(("q_h" + std::to_string(head_idx_)).c_str(),
                          query_reference_out_, query_layer_out_,

@@ -58,6 +58,7 @@ private:
     std::size_t head_hidden_size_;
     std::size_t kernel_size_;
     std::size_t max_col_;
+    std::size_t input_dim_;
 
     LinearLayer* query_layer_;
     LinearLayer* key_layer_;
