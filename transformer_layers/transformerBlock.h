@@ -40,7 +40,7 @@ private:
     LinearLayer* condense;
     LinearLayer* feedForward0;
     LinearLayer* feedForward1;
-#ifdef USE_CODEBOOK_GEMM
+#ifdef CFG_USE_CODEBOOK_GEMM
     LinearLayer* condenseReference; 
     LinearLayer* feedForward0Reference;
     LinearLayer* feedForward1Reference;

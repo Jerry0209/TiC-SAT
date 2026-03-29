@@ -41,8 +41,10 @@ private:
     std::size_t n_words_row_;
     uint8_t bits_per_cb_;
     const uint32_t *weight_idx_;
-    const float *codebook_;
+    const float *codebook_; // Redundant
     const float *bias_;
+
+    // Reserved for future mixed-scale path; currently compact int GEMM consumes int8 directly.
     float input_dequant_scale_;
     float output_quant_scale_;
 
