@@ -334,8 +334,10 @@ TransformerBlock::TransformerBlock(std::size_t pre_seq_len,
     feedForward1Reference = ff1_bundle.reference;
 
     referenceCondense = new uint32_t[(pre_seq_len * input_dim) >> 2]();
+    referenceCondenseAfterAddNorm = new uint32_t[(pre_seq_len * input_dim) >> 2]();
     referenceFF0 = new uint32_t[(pre_seq_len * ff_size) >> 2]();
     referenceFF1 = new uint32_t[(pre_seq_len * input_dim) >> 2]();
+    referenceFinalOutput = new uint32_t[(pre_seq_len * input_dim) >> 2]();
 #endif
 }
 
@@ -364,8 +366,11 @@ TransformerBlock::~TransformerBlock() {
     delete feedForward1Reference;
 
     delete[] referenceCondense;
+    delete[] referenceCondenseAfterAddNorm;
     delete[] referenceFF0;
     delete[] referenceFF1;
+    delete[] referenceFinalOutput;
+    
 #endif
 }
 
@@ -411,13 +416,31 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* o
         referenceCondense,
         condense_out,
         (seq_len * input_dim_) >> 2);
+
+    std::copy(referenceCondense,
+              referenceCondense + ((seq_len * input_dim_) >> 2),
+              referenceCondenseAfterAddNorm); // To keep both the pre-addnorm and post-addnorm reference values for later comparison.
 #endif
 
     std::cout << "Add Norm" << std::endl;
 #ifdef BWMA
     addNorm->computeRearranged(input, condense_out);
 #else
-    addNorm->compute(input, condense_out);
+    addNorm->compute(input, condense_out); // Directly modify condense_out itself to be the output of addNorm
+#endif
+
+#if CFG_USE_CODEBOOK_REFERENCE
+#ifdef BWMA
+    addNorm->computeRearranged(input, referenceCondenseAfterAddNorm);
+#else
+    addNorm->compute(input, referenceCondenseAfterAddNorm);
+#endif
+
+    comparePackedBuffers(
+        "condense_out_after_addnorm",
+        referenceCondenseAfterAddNorm,
+        condense_out,
+        (seq_len * input_dim_) >> 2);
 #endif
 
     runM5IfAvailable("m5 dumpresetstats");
@@ -431,7 +454,8 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* o
               referenceFF0 + ((seq_len * ff_size_) >> 2),
               0u);
 
-    feedForward0Reference->compute(seq_len, condense_out, referenceFF0);
+    // feedForward0Reference->compute(seq_len, condense_out, referenceFF0);
+    feedForward0Reference->compute(seq_len, referenceCondenseAfterAddNorm, referenceFF0);
 
     comparePackedBuffers(
         "ffn0",
@@ -456,6 +480,10 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* o
         referenceFF1,
         output,
         (seq_len * input_dim_) >> 2);
+
+    std::copy(referenceFF1,
+          referenceFF1 + ((seq_len * input_dim_) >> 2),
+          referenceFinalOutput);  // std::copy(first, first + count, d_first) Copies the elements in the range [first, last) into the range beginning at d_first.
 #endif
 
     std::cout << "Add Norm" << std::endl;
@@ -463,6 +491,20 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* o
     addNorm->computeRearranged(condense_out, output);
 #else
     addNorm->compute(condense_out, output);
+#endif
+
+#if CFG_USE_CODEBOOK_REFERENCE
+#ifdef BWMA
+    addNorm->computeRearranged(referenceCondenseAfterAddNorm, referenceFinalOutput);
+#else
+    addNorm->compute(referenceCondenseAfterAddNorm, referenceFinalOutput);
+#endif
+
+    comparePackedBuffers(
+        "final_output_after_addnorm",
+        referenceFinalOutput,
+        output,
+        (seq_len * input_dim_) >> 2);
 #endif
 
     runM5IfAvailable("m5 dumpresetstats");

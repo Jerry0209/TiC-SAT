@@ -14,7 +14,7 @@
 // #define NUM_HEAD 2
 // #define D_FF 4
 
-// Smaller Smaller Menu (Match notebook)
+// Smaller Smaller Menu (Match notebook and codebooked GEMM)
 // #define D_Q 4
 // #define D_SEQ 2
 // #define D_MODEL 8

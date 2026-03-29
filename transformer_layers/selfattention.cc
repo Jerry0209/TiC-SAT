@@ -198,22 +198,22 @@ SingleHeadSelfAttn::~SingleHeadSelfAttn() {
 void SingleHeadSelfAttn::compute(std::size_t seq_len, uint32_t* input, uint32_t* output) {
 
     // Debug for head 0
-    static bool dumped_input_h0 = false;
-    static bool dumped_q_h0_outputs = false;
+    // static bool dumped_input_h0 = false;
+    // static bool dumped_q_h0_outputs = false;
 
-    const std::size_t rows_to_dump = std::min<std::size_t>(seq_len, 2);
+    // const std::size_t rows_to_dump = std::min<std::size_t>(seq_len, 2);
 
-    if (head_idx_ == 0 && !dumped_input_h0) {
-        dumped_input_h0 = true;
+    // if (head_idx_ == 0 && !dumped_input_h0) {
+    //     dumped_input_h0 = true;
 
-        std::size_t rows_to_dump = std::min<std::size_t>(seq_len, 2);
+    //     std::size_t rows_to_dump = std::min<std::size_t>(seq_len, 2);
 
-        std::cout << "\n===== DEBUG self attention input for head 0 =====\n";
-        std::cout << "seq_len = " << seq_len << "\n";
-        std::cout << "input_dim = " << input_dim_ << "\n";
-        printPackedTensorAsPythonList("input_matrix_test", input, rows_to_dump, input_dim_);
-        std::cout << "===== END DEBUG =====\n\n";
-    }
+    //     std::cout << "\n===== DEBUG self attention input for head 0 =====\n";
+    //     std::cout << "seq_len = " << seq_len << "\n";
+    //     std::cout << "input_dim = " << input_dim_ << "\n";
+    //     printPackedTensorAsPythonList("input_matrix_test", input, rows_to_dump, input_dim_);
+    //     std::cout << "===== END DEBUG =====\n\n";
+    // }
     
     query_layer_->compute(seq_len, input, query_layer_out_);
     key_layer_->compute(seq_len, input, key_layer_out_);
@@ -230,14 +230,14 @@ void SingleHeadSelfAttn::compute(std::size_t seq_len, uint32_t* input, uint32_t*
     value_reference_->compute(seq_len, input, value_reference_out_);
 
     // Print q_h0 outputs only once, after both paths have been computed.
-    if (head_idx_ == 0 && !dumped_q_h0_outputs) {
-        dumped_q_h0_outputs = true;
+    // if (head_idx_ == 0 && !dumped_q_h0_outputs) {
+    //     dumped_q_h0_outputs = true;
 
-        std::cout << "\n===== DEBUG q_h0 outputs =====\n";
-        printPackedTensorAsPythonList("q_h0_cpp_codebook", query_layer_out_, rows_to_dump, head_hidden_size_);
-        printPackedTensorAsPythonList("q_h0_cpp_dense_ref", query_reference_out_, rows_to_dump, head_hidden_size_);
-        std::cout << "===== END q_h0 OUTPUT DEBUG =====\n\n";
-    }
+    //     std::cout << "\n===== DEBUG q_h0 outputs =====\n";
+    //     printPackedTensorAsPythonList("q_h0_cpp_codebook", query_layer_out_, rows_to_dump, head_hidden_size_);
+    //     printPackedTensorAsPythonList("q_h0_cpp_dense_ref", query_reference_out_, rows_to_dump, head_hidden_size_);
+    //     std::cout << "===== END q_h0 OUTPUT DEBUG =====\n\n";
+    // }
 
     comparePackedBuffers(("q_h" + std::to_string(head_idx_)).c_str(),
                          query_reference_out_, query_layer_out_,

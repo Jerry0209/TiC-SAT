@@ -110,7 +110,9 @@ private:
     LinearLayer* feedForward1Reference = nullptr;
 
     uint32_t* referenceCondense = nullptr;
+    uint32_t* referenceCondenseAfterAddNorm = nullptr;
     uint32_t* referenceFF0 = nullptr;
     uint32_t* referenceFF1 = nullptr;
+    uint32_t* referenceFinalOutput = nullptr;
 #endif
 };
