@@ -9,9 +9,7 @@
 #include "transformer_layers/run_mode_config.h"
 
 // #ifndef RELOAD_WEIGHT
-#if !CFG_RELOAD_WEIGHT
 #include <filesystem>
-#endif
 
 #include "transformer_layers/debuggerFunctions.h"
 
@@ -117,8 +115,11 @@ void test() {
     std::cout << "CFG_ENABLE_DEBUG_PRINT = " << CFG_ENABLE_DEBUG_PRINT << std::endl;
     std::cout << "CFG_PROFILE_GEMM_ONLY = " << CFG_PROFILE_GEMM_ONLY << std::endl;
 
-    // The directory where the weights and output are saved
+    // Prefer the host-side project path and fall back to the 9p mount in gem5.
     std::string dir_name = "/home/thu/TiC-SAT/weights";
+    if (!std::filesystem::exists(dir_name)) {
+        dir_name = "/mnt/weights";
+    }
     std::string notebook_weights_dir = dir_name + "/generated_from_notebook";
 #if !CFG_RELOAD_WEIGHT
     std::filesystem::create_directories(dir_name);

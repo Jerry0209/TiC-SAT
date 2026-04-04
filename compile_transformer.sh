@@ -81,7 +81,13 @@ echo "  PROFILE_GEMM_ONLY_FLAG=${PROFILE_GEMM_ONLY_FLAG:-0}"
   -DDEBUG_SMALL_MODEL \
   -DCORE_NUM=1 \
   -fopenmp \
-  -o transformer.o
+  -static \
+  -o transformer.o \
+  -Wl,--start-group \
+  -lgomp \
+  -ldl \
+  -Wl,--end-group \
+  -pthread
 
 # conda activate gem5_env
 # source compile_transformer.sh 
@@ -128,7 +134,8 @@ echo "  PROFILE_GEMM_ONLY_FLAG=${PROFILE_GEMM_ONLY_FLAG:-0}"
 
 
 
-
-# qemu-aarch64 -L "$A64SYSROOT" ./transformer.o # Run this command to run Transformer with aarch64 on eslsrv12
+# Run this command to run Transformer with aarch64 on eslsrv12
+# qemu-aarch64 -L "$A64SYSROOT" ./transformer.o 
 # cp ~/TiC-SAT-Jerry/transformer.o /home/jerry/gem5/shared_folder/
+# cp ~/TiC-SAT/transformer.o ~/gem5/shared_folder/
 
