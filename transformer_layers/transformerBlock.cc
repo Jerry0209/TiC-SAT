@@ -199,6 +199,7 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* o
     addNorm->compute(input, referenceCondenseAfterAddNorm);
 #endif
 
+#if CFG_ENABLE_DEBUG_PRINT
     comparePackedBuffers(
         "condense_out_after_addnorm",
         referenceCondenseAfterAddNorm,
@@ -206,11 +207,16 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* o
         (seq_len * input_dim_) >> 2);
 #endif
 
+#endif
+
     runM5IfAvailable("m5 dumpresetstats");
 
     std::cout << "Feed Forward 0" << std::endl;
     feedForward0->compute(seq_len, condense_out, intermediateFF);
+
+#if CFG_ENABLE_DEBUG_PRINT
     printPackedPreview("ffn0", intermediateFF, (seq_len * ff_size_) >> 2);
+#endif
 
 #if CFG_USE_CODEBOOK_REFERENCE
     std::fill(referenceFF0,
@@ -220,6 +226,7 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* o
     // feedForward0Reference->compute(seq_len, condense_out, referenceFF0);
     feedForward0Reference->compute(seq_len, referenceCondenseAfterAddNorm, referenceFF0);
 
+#if CFG_ENABLE_DEBUG_PRINT
     comparePackedBuffers(
         "ffn0",
         referenceFF0,
@@ -227,9 +234,15 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* o
         (seq_len * ff_size_) >> 2);
 #endif
 
+#endif
+
     std::cout << "Feed Forward 1" << std::endl;
     feedForward1->compute(seq_len, intermediateFF, output);
+
+#if CFG_ENABLE_DEBUG_PRINT
     printPackedPreview("ffn1_pre_addnorm", output, (seq_len * input_dim_) >> 2);
+#endif
+
 
 #if CFG_USE_CODEBOOK_REFERENCE
     std::fill(referenceFF1,
@@ -238,11 +251,14 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* o
 
     feedForward1Reference->compute(seq_len, referenceFF0, referenceFF1);
 
+
+#if CFG_ENABLE_DEBUG_PRINT
     comparePackedBuffers(
         "ffn1_pre_addnorm",
         referenceFF1,
         output,
         (seq_len * input_dim_) >> 2);
+#endif
 
     std::copy(referenceFF1,
           referenceFF1 + ((seq_len * input_dim_) >> 2),
@@ -263,11 +279,14 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* o
     addNorm->compute(referenceCondenseAfterAddNorm, referenceFinalOutput);
 #endif
 
+#if CFG_ENABLE_DEBUG_PRINT
     comparePackedBuffers(
         "final_output_after_addnorm",
         referenceFinalOutput,
         output,
         (seq_len * input_dim_) >> 2);
+#endif
+
 #endif
 
     runM5IfAvailable("m5 dumpresetstats");

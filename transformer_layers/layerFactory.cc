@@ -47,10 +47,14 @@ LinearLayerBundle LayerFactory::create(
             layer_name.c_str(), input_size, output_size);
 
         bundle.main = new CodebookDense(cfg);
+#if CFG_ENABLE_DEBUG_PRINT
         std::cout << "[LayerFactory] Using CodebookDense for " << layer_name << std::endl;
+#endif
     } catch (const std::exception&) {
         bundle.main = new Dense(input_size, output_size, fallback_weight);
+#if CFG_ENABLE_DEBUG_PRINT
         std::cout << "[LayerFactory] Fallback to Dense for " << layer_name << std::endl;
+#endif
     }
 #else
     bundle.main = new Dense(input_size, output_size, fallback_weight);
