@@ -153,3 +153,20 @@ int main(int argc, char **argv) {
 // SYSROOT=$(aarch64-conda-linux-gnu-g++ -print-sysroot)
 // Run on SVE-capable hardware, gem5, or a qemu-aarch64 build with SVE enabled.
 // qemu-aarch64 -L "$SYSROOT" /tmp/test_single_layer_SVE_aarch64 q_h0 2
+
+
+// /home/thu/miniforge3/envs/gem5_env/bin/aarch64-conda-linux-gnu-g++ \
+//   -x c++ -std=c++17 -O2 -Wall -march=armv8-a+sve \
+//   Full_NN/src/test_single_layer_SVE.c \
+//   Full_NN/src/gemm_exec.c \
+//   Full_NN/src/gemm_SVE.c \
+//   -IFull_NN/inc -IFull_NN/gemm_definitions \
+//   -o /tmp/test_single_layer_SVE_aarch64
+
+
+// /home/thu/opt/qemu-sve/bin/qemu-aarch64 \
+//   -cpu max,sve=on,sve-default-vector-length=16 \
+//   -L /home/thu/miniforge3/envs/gem5_env/bin/../aarch64-conda-linux-gnu/sysroot \
+//   /tmp/test_single_layer_SVE_aarch64 q_h0 2 \
+//   < /tmp/test_single_layer_SVE_aarch64
+

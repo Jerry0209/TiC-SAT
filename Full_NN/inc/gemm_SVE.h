@@ -9,12 +9,19 @@
 extern "C" {
 #endif
 
-void gemm_exec_compact_int_sve(gemm_t gemm_layer,
-                               const int8_t *in,
-                               const uint32_t *weight_idx,
-                               const int8_t *codebook,
-                               const int32_t *bias,
-                               int32_t *out,
+void sve_gemm_row_compact_int8(const uint32_t *packed_row,
+                               uint32_t n_words_row,
+                               uint32_t k_elems,
+                               const int8_t *in_mat,
+                               uint32_t seq_tile,
+                               uint32_t ld_in,
+                               const int32_t *codebook_i32,
+                               int32_t *out_mat,
+                               uint32_t out_col,
+                               uint32_t ld_out,
+                               int32_t bias_val,
+                               int add_bias,
+                               int accumulate,
                                uint8_t bits_per_cb);
 
 #ifdef __cplusplus
