@@ -139,3 +139,14 @@ echo "  PROFILE_GEMM_ONLY_FLAG=${PROFILE_GEMM_ONLY_FLAG:-0}"
 # cp ~/TiC-SAT-Jerry/transformer.o /home/jerry/gem5/shared_folder/
 # cp ~/TiC-SAT/transformer.o ~/gem5/shared_folder/
 
+
+
+# conda activate gem5_env
+# SYSROOT=$(aarch64-conda-linux-gnu-g++ -print-sysroot)
+
+# $HOME/opt/qemu-sve/bin/qemu-aarch64 \
+#   -cpu max,sve=on,sve-default-vector-length=16 \
+#   -L "$SYSROOT" \
+#   /tmp/test_single_layer_SVE_aarch64 q_h0 2 \
+#   < /tmp/test_single_layer_SVE_aarch64
+
