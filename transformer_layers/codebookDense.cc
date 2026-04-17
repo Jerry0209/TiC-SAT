@@ -255,6 +255,15 @@ void CodebookDense::runCompactGemm(std::size_t seq_len, const uint32_t *input, u
     layer.output_size = static_cast<uint16_t>(output_size_);
     layer.n_words_row = static_cast<uint16_t>(n_words_row_);
 
+#ifdef SIMD
+    gemm_exec_compact_int_sve(layer,
+                              input_unpacked.data(), // vector, take the head address
+                              weight_idx_,
+                              codebook_q_.data(), // quantized codebook
+                              bias_q_.empty() ? nullptr : bias_q_.data(),
+                              output_acc.data(),
+                              bits_per_cb_);
+#else
     gemm_exec_compact_int(layer,
                           input_unpacked.data(), // vector, take the head address
                           weight_idx_,
@@ -262,6 +271,7 @@ void CodebookDense::runCompactGemm(std::size_t seq_len, const uint32_t *input, u
                           bias_q_.empty() ? nullptr : bias_q_.data(),
                           output_acc.data(),
                           bits_per_cb_);
+#endif
 
     std::vector<int8_t> output_int8(seq_len * output_size_, 0);
     for (std::size_t i = 0; i < output_acc.size(); i++) {

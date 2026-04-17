@@ -415,6 +415,12 @@ bool is_all_zero_int8x16(int8x16_t vec) {
     return combined_result == UINT64_MAX;
 }
 
+static inline int8_t get_lane_s8_runtime(int8x16_t vec, int lane) {
+    int8_t lanes[16];
+    vst1q_s8(lanes, vec);
+    return lanes[lane & 15];
+}
+
 
 void simdComputeRWMA(size_t seq_len, const uint32_t * input, uint32_t * output, uint32_t * weight,
                  size_t input_size_, size_t output_size_) {
@@ -462,7 +468,7 @@ void simdComputeRWMA(size_t seq_len, const uint32_t * input, uint32_t * output, 
 
                 for (int k=0; k< 16; k++){
                     for (int i=0; i<16; i++){
-                        C[k] = vmlaq_s8(C[k], B[i], vmovq_n_s8(vgetq_lane_s8(A[k], 4*(i/4) +3-(i%4))));
+                        C[k] = vmlaq_s8(C[k], B[i], vmovq_n_s8(get_lane_s8_runtime(A[k], 4*(i/4) +3-(i%4))));
                     }
                 }
 
@@ -529,7 +535,7 @@ void simdComputeBWMA(size_t seq_len, const uint32_t * input, uint32_t * output, 
 
                 for (int k=0; k< 16; k++){
                     for (int i=0; i<16; i++){
-                        C[k] = vmlaq_s8(C[k], B[i], vmovq_n_s8(vgetq_lane_s8(A[k], 4*(i/4) +3-(i%4))));
+                        C[k] = vmlaq_s8(C[k], B[i], vmovq_n_s8(get_lane_s8_runtime(A[k], 4*(i/4) +3-(i%4))));
                     }
                 }
 
@@ -552,6 +558,5 @@ void simdComputeBWMA(size_t seq_len, const uint32_t * input, uint32_t * output, 
     }
 }
 #endif
-
 
 

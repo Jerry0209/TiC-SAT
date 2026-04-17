@@ -2,7 +2,9 @@
 #include <stdint.h>
 
 #include <gemm_exec.h>
+#ifdef SIMD
 #include <gemm_SVE.h>
+#endif
 
 static uint32_t get_packed_index(const uint32_t *packed_row,
                                  uint32_t elem_idx,
@@ -106,6 +108,7 @@ void gemm_exec_compact_int(gemm_t gemm_layer,
     }
 }
 
+#ifdef SIMD
 void gemm_exec_compact_int_sve(gemm_t gemm_layer,
                                const int8_t *in,
                                const uint32_t *weight_idx,
@@ -137,7 +140,6 @@ void gemm_exec_compact_int_sve(gemm_t gemm_layer,
         return;
     }
 
-#if defined(__ARM_FEATURE_SVE)
     if (bits_per_cb > 8u) {
         gemm_exec_compact_int(gemm_layer,
                               in,
@@ -207,13 +209,5 @@ void gemm_exec_compact_int_sve(gemm_t gemm_layer,
             }
         }
     }
-#else
-    gemm_exec_compact_int(gemm_layer,
-                          in,
-                          weight_idx,
-                          codebook,
-                          bias,
-                          out,
-                          bits_per_cb);
-#endif
 }
+#endif

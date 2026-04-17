@@ -3,6 +3,10 @@
 #include <gemm_exec.h>
 #include <gemm_SVE.h>
 
+#ifndef SIMD
+#error "test_single_layer_SVE requires -DSIMD and Full_NN/src/gemm_SVE.c in the build."
+#endif
+
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -142,7 +146,7 @@ int main(int argc, char **argv) {
 }
 
 // Example build from /home/thu/TiC-SAT:
-//   aarch64-conda-linux-gnu-g++ -x c++ -std=c++17 -O2 -Wall -march=armv8-a+sve
+//   aarch64-conda-linux-gnu-g++ -x c++ -std=c++17 -O2 -Wall -march=armv8-a+sve -DSIMD
 //   Full_NN/src/test_single_layer_SVE.c
 //   Full_NN/src/gemm_exec.c
 //   Full_NN/src/gemm_SVE.c
@@ -155,18 +159,44 @@ int main(int argc, char **argv) {
 // qemu-aarch64 -L "$SYSROOT" /tmp/test_single_layer_SVE_aarch64 q_h0 2
 
 
-// /home/thu/miniforge3/envs/gem5_env/bin/aarch64-conda-linux-gnu-g++ \
-//   -x c++ -std=c++17 -O2 -Wall -march=armv8-a+sve \
-//   Full_NN/src/test_single_layer_SVE.c \
-//   Full_NN/src/gemm_exec.c \
-//   Full_NN/src/gemm_SVE.c \
-//   -IFull_NN/inc -IFull_NN/gemm_definitions \
-//   -o /tmp/test_single_layer_SVE_aarch64
+/*
+/home/thu/miniforge3/envs/gem5_env/bin/aarch64-conda-linux-gnu-g++ \
+  -x c++ -std=c++17 -O2 -Wall -march=armv8-a+sve -DSIMD \
+  Full_NN/src/test_single_layer_SVE.c \
+  Full_NN/src/gemm_exec.c \
+  Full_NN/src/gemm_SVE.c \
+  -IFull_NN/inc -IFull_NN/gemm_definitions \
+  -o /tmp/test_single_layer_SVE_aarch64
+
+/home/thu/opt/qemu-sve/bin/qemu-aarch64 \
+  -cpu max,sve=on,sve-default-vector-length=16 \
+  -L /home/thu/miniforge3/envs/gem5_env/bin/../aarch64-conda-linux-gnu/sysroot \
+  /tmp/test_single_layer_SVE_aarch64 q_h0 2 \
+  < /tmp/test_single_layer_SVE_aarch64
+*/
 
 
-// /home/thu/opt/qemu-sve/bin/qemu-aarch64 \
-//   -cpu max,sve=on,sve-default-vector-length=16 \
-//   -L /home/thu/miniforge3/envs/gem5_env/bin/../aarch64-conda-linux-gnu/sysroot \
-//   /tmp/test_single_layer_SVE_aarch64 q_h0 2 \
-//   < /tmp/test_single_layer_SVE_aarch64
+/* 
+/home/thu/miniforge3/envs/gem5_env/bin/aarch64-conda-linux-gnu-g++ \
+  -x c++ -std=c++17 -O2 -Wall -march=armv8-a+sve -DSIMD \
+  Full_NN/src/test_single_layer_SVE.c \
+  Full_NN/src/gemm_exec.c \
+  Full_NN/src/gemm_SVE.c \
+  -IFull_NN/inc \
+  -IFull_NN/gemm_definitions \
+  -o /tmp/test_single_layer_SVE_aarch64
 
+
+  /home/thu/opt/qemu-sve/bin/qemu-aarch64 \
+  -cpu max,sve=on,sve-default-vector-length=16 \
+  -L /home/thu/miniforge3/envs/gem5_env/bin/../aarch64-conda-linux-gnu/sysroot \
+  /tmp/test_single_layer_SVE_aarch64 q_h0 2 \
+  < /tmp/test_single_layer_SVE_aarch64
+
+
+  /home/thu/opt/qemu-sve/bin/qemu-aarch64 \
+  -cpu max,sve=on,sve-default-vector-length=16 \
+  -L /home/thu/miniforge3/envs/gem5_env/bin/../aarch64-conda-linux-gnu/sysroot \
+  /tmp/test_single_layer_SVE_aarch64 ff0 4 \
+  < /tmp/test_single_layer_SVE_aarch64
+ */

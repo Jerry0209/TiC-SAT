@@ -81,6 +81,13 @@
 #define CFG_PROFILE_GEMM_ONLY 0
 #endif
 
+// Enable SIMD/SVE implementations when the build defines SIMD.
+#ifdef SIMD
+#define CFG_SIMD 1
+#else
+#define CFG_SIMD 0
+#endif
+
 #if CFG_PROFILE_GEMM_ONLY
 #undef CFG_USE_CODEBOOK_REFERENCE
 #define CFG_USE_CODEBOOK_REFERENCE 0

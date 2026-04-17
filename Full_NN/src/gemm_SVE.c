@@ -1,8 +1,6 @@
 #include <stdint.h>
 
-#if defined(__ARM_FEATURE_SVE)
 #include <arm_sve.h>
-#endif
 
 #include <gemm_SVE.h>
 
@@ -37,7 +35,6 @@ void sve_gemm_row_compact_int8(const uint32_t *packed_row,
         return;
     }
 
-#if defined(__ARM_FEATURE_SVE)
     const uint32_t idxs_per_word = 32u / bits_per_cb;
     const uint32_t idx_mask = gemm_sve_idx_mask(bits_per_cb);
     const uint32_t n_lanes = (uint32_t)svcntw();
@@ -99,27 +96,4 @@ void sve_gemm_row_compact_int8(const uint32_t *packed_row,
             *out_slot = acc;
         }
     }
-#else
-    uint32_t idxs_per_word = 32u / bits_per_cb;
-    uint32_t idx_mask = gemm_sve_idx_mask(bits_per_cb);
-
-    for (uint32_t row = 0; row < seq_tile; row++) {
-        int32_t acc = add_bias ? bias_val : 0;
-
-        for (uint32_t in_idx = 0; in_idx < k_elems; in_idx++) {
-            uint32_t word_idx = in_idx / idxs_per_word;
-            uint32_t offset = (in_idx % idxs_per_word) * bits_per_cb;
-            uint32_t cb_idx = (packed_row[word_idx] >> offset) & idx_mask;
-            acc += (int32_t)in_mat[row * ld_in + in_idx] *
-                   codebook_i32[cb_idx];
-        }
-
-        int32_t *out_slot = &out_mat[row * ld_out + out_col];
-        if (accumulate) {
-            *out_slot += acc;
-        } else {
-            *out_slot = acc;
-        }
-    }
-#endif
 }
