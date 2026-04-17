@@ -3,9 +3,9 @@
 
 #define N_LEARNERS      1
 
-#define N_SVE_LANES     1
-#define N_SVE_HALF      2
-#define N_SVE_BYTE      4
+#define N_SVE_LANES     4
+#define N_SVE_HALF      8
+#define N_SVE_BYTE      16
 
 #define CB_SIZE         8
 #define BITS_PER_CB		3
@@ -19,8 +19,8 @@
 // Number of indexes packed per each vector register
 #define IDX_PER_VECT	((N_SVE_LANES) * (IDXS_PER_WORD))
 
-#define N_SVE_REG_CB_8	8
-#define N_SVE_REG_CB_F16_4	4
+#define N_SVE_REG_CB_2	2
+#define N_SVE_REG_CB_F16_1	1
 
 
 #define USE_F32   1

@@ -50,10 +50,16 @@ LinearLayerBundle LayerFactory::create(
 #if CFG_ENABLE_DEBUG_PRINT
         std::cout << "[LayerFactory] Using CodebookDense for " << layer_name << std::endl;
 #endif
-    } catch (const std::exception&) {
+    } catch (const std::exception& ex) {
+#if CFG_PROFILE_GEMM_ONLY
+        throw std::runtime_error(
+            "PROFILE_GEMM_ONLY requires a matching CodebookDense registry entry for " +
+            layer_name + ": " + ex.what());
+#else
         bundle.main = new Dense(input_size, output_size, fallback_weight);
 #if CFG_ENABLE_DEBUG_PRINT
         std::cout << "[LayerFactory] Fallback to Dense for " << layer_name << std::endl;
+#endif
 #endif
     }
 #else

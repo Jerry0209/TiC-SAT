@@ -100,9 +100,11 @@
 // Sanity checks
 // --------------------------------------------------
 
-// Codebook GEMM needs notebook-generated weights / registry-backed data.
-#if CFG_USE_CODEBOOK_GEMM && !CFG_USE_NOTEBOOK_GENERATED_WEIGHTS
-#error "USE_CODEBOOK_GEMM requires USE_NOTEBOOK_GENERATED_WEIGHTS."
+// Normal Codebook GEMM runs need notebook-generated dense weights for fallback
+// and optional reference comparison. Profiling-only runs use the generated
+// registry directly and may skip the notebook .bin weight files.
+#if CFG_USE_CODEBOOK_GEMM && !CFG_PROFILE_GEMM_ONLY && !CFG_USE_NOTEBOOK_GENERATED_WEIGHTS
+#error "USE_CODEBOOK_GEMM requires USE_NOTEBOOK_GENERATED_WEIGHTS unless PROFILE_GEMM_ONLY is enabled."
 #endif
 
 // Reference comparison only makes sense when codebook GEMM is enabled.

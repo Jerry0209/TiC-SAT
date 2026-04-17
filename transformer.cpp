@@ -158,7 +158,9 @@ void test() {
 
     uint32_t *out = new uint32_t[D_SEQ * D_MODEL >> 2]();
     uint32_t *weightVec[3 * NUM_HEAD + 3]; // Array of pointers: each head has Q, K, V matrices
+#if !(CFG_PROFILE_GEMM_ONLY && CFG_USE_CODEBOOK_GEMM)
     int head_qkv_size = D_Q * D_MODEL >> 2;
+#endif
 
     for (int n = 0; n < NUM_HEAD; n++) {
         volatile auto query_kernel = new uint32_t[D_Q * D_MODEL >> 2]();
@@ -170,6 +172,7 @@ void test() {
     //     uint32_t* key_kernel = new uint32_t[D_Q * D_MODEL >> 2]();
     //     uint32_t* value_kernel = new uint32_t[D_Q * D_MODEL >> 2]();
 
+#if !(CFG_PROFILE_GEMM_ONLY && CFG_USE_CODEBOOK_GEMM)
         bool q_loaded_from_notebook = false;
         bool k_loaded_from_notebook = false;
         bool v_loaded_from_notebook = false;
@@ -241,6 +244,7 @@ void test() {
         blockWise2RowWise(value_kernel, valueRowWise, D_MODEL, D_Q >> 2);
         value_kernel = valueRowWise;
 #endif
+#endif
 
         weightVec[n * 3] = query_kernel;
         weightVec[n * 3 + 1] = key_kernel;
@@ -253,6 +257,7 @@ void test() {
 
 
     // Load .bin weights generated from the notebook
+#if !(CFG_PROFILE_GEMM_ONLY && CFG_USE_CODEBOOK_GEMM)
     int n = -1; // n=-1 means that we are not saving/loading a head
     bool condense_loaded_from_notebook = false;
     bool ff0_loaded_from_notebook = false;
@@ -342,6 +347,7 @@ void test() {
     blockWise2RowWise(ff1_kernel, ff1RowWise, D_FF, D_MODEL >> 2);
     ff1_kernel = ff1RowWise;
 
+#endif
 #endif
 
     weightVec[NUM_HEAD * 3] = condense_kernel;
