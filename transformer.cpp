@@ -127,6 +127,7 @@ void test() {
         dir_name = "/mnt/weights";
     }
     std::string notebook_weights_dir = dir_name + "/generated_from_notebook";
+    std::string notebook_weights_dir_learner0 = notebook_weights_dir + "/learner0";
 #if !CFG_RELOAD_WEIGHT
     std::filesystem::create_directories(dir_name);
 #endif
@@ -203,26 +204,26 @@ void test() {
 #endif
 
         q_loaded_from_notebook = tryLoadWeight(
-            n, 0, head_qkv_size, query_kernel, notebook_weights_dir);
+            n, 0, head_qkv_size, query_kernel, notebook_weights_dir_learner0);
 
         k_loaded_from_notebook = tryLoadWeight(
-            n, 1, head_qkv_size, key_kernel, notebook_weights_dir);
+            n, 1, head_qkv_size, key_kernel, notebook_weights_dir_learner0);
 
         v_loaded_from_notebook = tryLoadWeight(
-            n, 2, head_qkv_size, value_kernel, notebook_weights_dir);
+            n, 2, head_qkv_size, value_kernel, notebook_weights_dir_learner0);
 
 #if CFG_ENABLE_DEBUG_PRINT
         if (q_loaded_from_notebook) {
             std::cout << "Loaded notebook-generated Q weights for head "
-                    << n << " from " << notebook_weights_dir << std::endl;
+                    << n << " from " << notebook_weights_dir_learner0 << std::endl;
         }
         if (k_loaded_from_notebook) {
             std::cout << "Loaded notebook-generated K weights for head "
-                    << n << " from " << notebook_weights_dir << std::endl;
+                    << n << " from " << notebook_weights_dir_learner0 << std::endl;
         }
         if (v_loaded_from_notebook) {
             std::cout << "Loaded notebook-generated V weights for head "
-                    << n << " from " << notebook_weights_dir << std::endl;
+                    << n << " from " << notebook_weights_dir_learner0 << std::endl;
         }
 #endif
 #endif
@@ -287,27 +288,27 @@ void test() {
     #if CFG_ENABLE_DEBUG_PRINT
         printf("Condense/projection layer: trying notebook-generated condense weights\n");
     #endif
-        condense_loaded_from_notebook = tryLoadWeight(n, 0, NUM_HEAD * D_Q * D_MODEL >> 2, condense_kernel, notebook_weights_dir);
+        condense_loaded_from_notebook = tryLoadWeight(n, 0, NUM_HEAD * D_Q * D_MODEL >> 2, condense_kernel, notebook_weights_dir_learner0);
 
     #if CFG_ENABLE_DEBUG_PRINT
         printf("Feed forward layer 0: trying notebook-generated FF0 weights\n");
     #endif
-        ff0_loaded_from_notebook = tryLoadWeight(n, 1, D_MODEL * D_FF >> 2, ff0_kernel, notebook_weights_dir);
+        ff0_loaded_from_notebook = tryLoadWeight(n, 1, D_MODEL * D_FF >> 2, ff0_kernel, notebook_weights_dir_learner0);
 
     #if CFG_ENABLE_DEBUG_PRINT
         printf("Feed forward layer 1: trying notebook-generated FF1 weights\n");
     #endif
-        ff1_loaded_from_notebook = tryLoadWeight(n, 2, D_FF * D_MODEL >> 2, ff1_kernel, notebook_weights_dir);
+        ff1_loaded_from_notebook = tryLoadWeight(n, 2, D_FF * D_MODEL >> 2, ff1_kernel, notebook_weights_dir_learner0);
 
     #if CFG_ENABLE_DEBUG_PRINT
         if (condense_loaded_from_notebook) {
-            std::cout << "Loaded notebook-generated condense weights from " << notebook_weights_dir << std::endl;
+            std::cout << "Loaded notebook-generated condense weights from " << notebook_weights_dir_learner0 << std::endl;
         }
         if (ff0_loaded_from_notebook) {
-            std::cout << "Loaded notebook-generated FF0 weights from " << notebook_weights_dir << std::endl;
+            std::cout << "Loaded notebook-generated FF0 weights from " << notebook_weights_dir_learner0 << std::endl;
         }
         if (ff1_loaded_from_notebook) {
-            std::cout << "Loaded notebook-generated FF1 weights from " << notebook_weights_dir << std::endl;
+            std::cout << "Loaded notebook-generated FF1 weights from " << notebook_weights_dir_learner0 << std::endl;
         }
     #endif
     #endif
