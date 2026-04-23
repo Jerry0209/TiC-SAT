@@ -136,11 +136,31 @@ void test() {
 #if CFG_RELOAD_WEIGHT
     // Load the tensor input from file
     // We assign -1 and -1 to n_head and qkv to indicate that we are not loading the weight
+    bool input_loaded_from_notebook = false;
+
+#if CFG_USE_NOTEBOOK_GENERATED_WEIGHTS
 #if CFG_ENABLE_DEBUG_PRINT
-    printf("Input matrix: loading weights of input matrix\n");
+    printf("Input matrix: trying notebook-generated input\n");
+#endif
+    input_loaded_from_notebook = tryLoadWeight(
+        -1, -1, D_SEQ * D_MODEL >> 2, tensor_in, notebook_weights_dir);
+
+#if CFG_ENABLE_DEBUG_PRINT
+    if (input_loaded_from_notebook) {
+        std::cout << "Loaded notebook-generated input matrix from "
+                  << notebook_weights_dir << std::endl;
+    }
+#endif
 #endif
 
-    loadWeight(-1, -1, D_SEQ * D_MODEL >> 2, tensor_in, dir_name);
+#if CFG_ENABLE_DEBUG_PRINT
+    if (!input_loaded_from_notebook) {
+        printf("Input matrix: loading weights of input matrix\n");
+    }
+#endif
+    if (!input_loaded_from_notebook) {
+        loadWeight(-1, -1, D_SEQ * D_MODEL >> 2, tensor_in, dir_name);
+    }
 #else
     fill_kernel(tensor_in, D_SEQ * D_MODEL >> 2);
     // Save the tensor input to file

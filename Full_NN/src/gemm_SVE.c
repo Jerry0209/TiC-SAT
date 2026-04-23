@@ -8,6 +8,11 @@ static uint32_t gemm_sve_idx_mask(uint8_t bits_per_cb) {
     return (bits_per_cb >= 32u) ? UINT32_MAX : ((1u << bits_per_cb) - 1u);
 }
 
+// bits_per_cb = 1 → mask = 0b1
+// bits_per_cb = 2 → mask = 0b11
+// bits_per_cb = 4 → mask = 0b1111
+// bits_per_cb = 8 → mask = 0b11111111
+
 void sve_gemm_row_compact_int8(const uint32_t *packed_row,
                                uint32_t n_words_row,
                                uint32_t k_elems,
@@ -22,7 +27,7 @@ void sve_gemm_row_compact_int8(const uint32_t *packed_row,
                                int add_bias,
                                int accumulate,
                                uint8_t bits_per_cb) {
-    if ((bits_per_cb == 0u) || (k_elems == 0u)) {
+    if ((bits_per_cb == 0u) || (k_elems == 0u)) { // No input elements, so output is just bias (if add_bias) or zero
         for (uint32_t row = 0; row < seq_tile; row++) {
             int32_t acc = add_bias ? bias_val : 0;
             int32_t *out_slot = &out_mat[row * ld_out + out_col];
@@ -37,7 +42,7 @@ void sve_gemm_row_compact_int8(const uint32_t *packed_row,
 
     const uint32_t idxs_per_word = 32u / bits_per_cb;
     const uint32_t idx_mask = gemm_sve_idx_mask(bits_per_cb);
-    const uint32_t n_lanes = (uint32_t)svcntw();
+    const uint32_t n_lanes = (uint32_t)svcntw(); // Auto-detect number of 32-bit lanes in SVE vector
 
     const svuint32_t idx_mask_v = svdup_u32(idx_mask);
 
@@ -48,12 +53,12 @@ void sve_gemm_row_compact_int8(const uint32_t *packed_row,
         for (uint32_t cw = 0; (cw < n_words_row) && (input_idx < k_elems);
              cw += n_lanes) {
             svbool_t load_pg =
-                svwhilelt_b32((uint64_t)cw, (uint64_t)n_words_row);
+                svwhilelt_b32((uint64_t)cw, (uint64_t)n_words_row); // n_words_row is the number of uint32_t words in the row
             svuint32_t packed_idxs = svld1_u32(load_pg, &packed_row[cw]);
             uint32_t n_loaded_lanes = (uint32_t)svcntp_b32(load_pg, load_pg);
 
             for (uint32_t lane = 0; lane < n_loaded_lanes; lane++) {
-                svuint32_t dup_idxs_packed = svdup_lane_u32(packed_idxs, lane);
+                svuint32_t dup_idxs_packed = svdup_lane_u32(packed_idxs, lane); // duplicate the current lane's packed indices across the vector for processing
 
                 for (uint32_t idx_ptr = 0;
                      (idx_ptr < idxs_per_word) && (input_idx < k_elems);
@@ -66,30 +71,31 @@ void sve_gemm_row_compact_int8(const uint32_t *packed_row,
                     svbool_t bits_pg =
                         svwhilelt_b32((uint64_t)0, (uint64_t)active_lanes);
                     svuint32_t shifts =
-                        svindex_u32(idx_ptr * bits_per_cb, bits_per_cb);
+                        svindex_u32(idx_ptr * bits_per_cb, bits_per_cb); // shifts for extracting each index from the packed word
 
                     svuint32_t cb_idxs =
                         svlsr_u32_z(bits_pg, dup_idxs_packed, shifts);
-                    cb_idxs = svand_u32_z(bits_pg, cb_idxs, idx_mask_v);
+                    cb_idxs = svand_u32_z(bits_pg, cb_idxs, idx_mask_v); // Get the actual codebook indices for this set of lanes
 
                     svint32_t in_vals =
                         svld1sb_s32(bits_pg, &in_mat[row * ld_in + input_idx]);
                     svint32_t weights =
-                        svld1_gather_u32index_s32(bits_pg, codebook_i32, cb_idxs);
+                        svld1_gather_u32index_s32(bits_pg, codebook_i32, cb_idxs); // Get the corresponding weights from the codebook for these indices
+                        // weights = [codebook_i32[2], codebook_i32[0], codebook_i32[3], codebook_i32[1]]
 
-                    acc_v = svmla_s32_m(bits_pg, acc_v, in_vals, weights);
+                    acc_v = svmla_s32_m(bits_pg, acc_v, in_vals, weights); // Add them together into the accumulator vector
 
                     input_idx += (uint32_t)svcntp_b32(bits_pg, bits_pg);
                 }
             }
         }
 
-        int32_t acc = svaddv_s32(svptrue_b32(), acc_v);
+        int32_t acc = svaddv_s32(svptrue_b32(), acc_v); // Horizontally add the vector accumulator to get the final dot product for this output element
         if (add_bias) {
             acc += bias_val;
         }
 
-        int32_t *out_slot = &out_mat[row * ld_out + out_col];
+        int32_t *out_slot = &out_mat[row * ld_out + out_col]; 
         if (accumulate) {
             *out_slot += acc;
         } else {

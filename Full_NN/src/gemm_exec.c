@@ -151,11 +151,14 @@ void gemm_exec_compact_int_sve(gemm_t gemm_layer,
         return;
     }
 
-    int32_t codebook_i32[256];
+    int32_t codebook_i32[256]; // Extend codebook weights to 32 bits as the SVE inputs are extended to 32 bits
     const uint32_t codebook_size = 1u << bits_per_cb;
     for (uint32_t cb_idx = 0; cb_idx < codebook_size; cb_idx++) {
         codebook_i32[cb_idx] = (int32_t)codebook[cb_idx];
     }
+
+    // E.g. int8_t codebook[4] = {3, -1, 7, 2};
+    // int32_t codebook_i32[4] = {3, -1, 7, 2};
 
     /*
      * Non-tiled path: the tile sizes cover the full GEMM dimensions.
