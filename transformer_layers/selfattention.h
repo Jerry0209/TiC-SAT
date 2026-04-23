@@ -21,11 +21,17 @@ public:
                        std::size_t head_hidden_size,
                        uint32_t** weightVector,
                        std::size_t kernel_dim,
-                       std::size_t max_col);
+                       std::size_t max_col,
+                       std::size_t learner_idx = 0,
+                       std::string dump_dir = "");
 
     ~SingleHeadSelfAttn();
 
     void compute(std::size_t seq_len, uint32_t* input, uint32_t* output);
+    static void computeGroup4(std::size_t seq_len,
+                              SingleHeadSelfAttn* heads[4],
+                              uint32_t* const inputs[4],
+                              uint32_t* const outputs[4]);
 
 private:
     std::size_t head_idx_;
@@ -34,6 +40,8 @@ private:
     std::size_t kernel_size_;
     std::size_t max_col_;
     std::size_t input_dim_;
+    std::size_t learner_idx_;
+    std::string dump_dir_;
 
     LinearLayer* query_layer_;
     LinearLayer* key_layer_;

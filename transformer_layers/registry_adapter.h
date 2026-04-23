@@ -17,9 +17,18 @@ inline CodebookDenseConfig makeCodebookDenseConfigFromRegistry(const char* layer
     cfg.output_size = view->output_size;
     cfg.n_words_row = view->n_words_row;
     cfg.bits_per_cb = view->bits_per_cb;
+    cfg.n_learners = view->n_learners;
+    cfg.same_seq = view->same_seq;
+    cfg.selected_learner = learner;
     cfg.weight_idx = getGeneratedCodebookWeightIdx(view, learner);
+    cfg.weight_idx_by_learner = view->weight_idx_by_learner;
+    cfg.weight_idx_interleaved = getGeneratedCodebookWeightIdxInterleaved(view);
     cfg.codebook_int8 = getGeneratedCodebookInt8(view, learner);
+    cfg.codebooks_int8 = view->codebooks_int8;
+    cfg.codebook_int8_interleaved = getGeneratedCodebookInt8Interleaved(view);
     cfg.bias = getGeneratedCodebookBias(view, learner);
+    cfg.biases = view->biases;
+    cfg.bias_interleaved = getGeneratedCodebookBiasInterleaved(view);
     cfg.input_dequant_scale = 1.0f;
     cfg.output_quant_scale = 1.0f;
 
@@ -28,4 +37,12 @@ inline CodebookDenseConfig makeCodebookDenseConfigFromRegistry(const char* layer
     }
 
     return cfg;
+}
+
+inline std::size_t getCodebookDenseLearnerCount(const char* layer_name) {
+    const GeneratedCodebookLayerView* view = findGeneratedCodebookLayer(layer_name);
+    if (!view) {
+        throw std::runtime_error(std::string("Layer not found in registry: ") + layer_name);
+    }
+    return view->n_learners;
 }

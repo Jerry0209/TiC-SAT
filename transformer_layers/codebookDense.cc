@@ -73,10 +73,19 @@ CodebookDense::CodebookDense(const CodebookDenseConfig &config)
     : input_size_(config.input_size),
       output_size_(config.output_size),
       n_words_row_(config.n_words_row),
+      n_learners_(config.n_learners == 0 ? 1 : config.n_learners),
+      same_seq_(config.same_seq),
+      selected_learner_(config.selected_learner),
       bits_per_cb_(config.bits_per_cb),
       weight_idx_(config.weight_idx),
+      weight_idx_by_learner_(config.weight_idx_by_learner),
+      weight_idx_interleaved_(config.weight_idx_interleaved),
       codebook_(config.codebook),
+      codebooks_int8_(config.codebooks_int8),
+      codebook_int8_interleaved_(config.codebook_int8_interleaved),
       bias_(config.bias),
+      biases_(config.biases),
+      bias_interleaved_(config.bias_interleaved),
       input_dequant_scale_(config.input_dequant_scale == 0.0f ? 1.0f : config.input_dequant_scale),
       output_quant_scale_(config.output_quant_scale == 0.0f ? 1.0f : config.output_quant_scale) {
     if (input_size_ == 0 || output_size_ == 0) {
@@ -110,12 +119,40 @@ CodebookDense::CodebookDense(const CodebookDenseConfig &config)
         throw std::invalid_argument("CodebookDense requires either float or int8 codebook data");
     }
 
+    if (codebooks_int8_ != nullptr && n_learners_ > 0) {
+        codebooks_q_.assign(codebooks_int8_, codebooks_int8_ + (n_learners_ * codebook_size));
+    } else if (n_learners_ == 1u) {
+        codebooks_q_ = codebook_q_;
+    }
+
+    if (codebook_int8_interleaved_ != nullptr && n_learners_ > 0) {
+        codebook_interleaved_q_.assign(
+            codebook_int8_interleaved_,
+            codebook_int8_interleaved_ + (n_learners_ * codebook_size));
+    }
+
     if (bias_ != nullptr) {
         bias_q_.reserve(output_size_);
         for (std::size_t out_idx = 0; out_idx < output_size_; out_idx++) {
             bias_q_.push_back(clampToInt32(static_cast<double>(bias_[out_idx]) * output_quant_scale_));
         }
     }
+
+    if (biases_ != nullptr && n_learners_ > 0) {
+        biases_q_.reserve(n_learners_ * output_size_);
+        for (std::size_t idx = 0; idx < n_learners_ * output_size_; idx++) {
+            biases_q_.push_back(clampToInt32(static_cast<double>(biases_[idx]) * output_quant_scale_));
+        }
+    }
+
+    if (bias_interleaved_ != nullptr && n_learners_ > 0) {
+        bias_interleaved_q_.reserve(n_learners_ * output_size_);
+        for (std::size_t idx = 0; idx < n_learners_ * output_size_; idx++) {
+            bias_interleaved_q_.push_back(clampToInt32(static_cast<double>(bias_interleaved_[idx]) * output_quant_scale_));
+        }
+    }
+
+    buildInterleavedCachesIfNeeded();
 }
 
 /**
@@ -283,6 +320,122 @@ void CodebookDense::runCompactGemm(std::size_t seq_len, const uint32_t *input, u
     }
 
     packInt8(output_int8, output); // Pack to 32-bit words and output
+}
+
+void CodebookDense::buildInterleavedCachesIfNeeded() {
+    if (n_learners_ != 4u) {
+        return;
+    }
+
+    const std::size_t packed_idx_count = output_size_ * n_words_row_;
+    if (weight_idx_interleaved_ == nullptr) {
+        weight_idx_interleaved_cache_.resize(packed_idx_count * 4u);
+        for (std::size_t idx = 0; idx < packed_idx_count; idx++) {
+            for (std::size_t learner = 0; learner < 4u; learner++) {
+                if (same_seq_ || weight_idx_by_learner_ == nullptr) {
+                    weight_idx_interleaved_cache_[idx * 4u + learner] = weight_idx_[idx];
+                } else {
+                    weight_idx_interleaved_cache_[idx * 4u + learner] =
+                        weight_idx_by_learner_[learner * packed_idx_count + idx];
+                }
+            }
+        }
+        weight_idx_interleaved_ = weight_idx_interleaved_cache_.data();
+    }
+
+    const std::size_t codebook_size = static_cast<std::size_t>(1u) << bits_per_cb_;
+    if (codebook_interleaved_q_.empty()) {
+        codebook_interleaved_q_.resize(codebook_size * 4u);
+        for (std::size_t cb_idx = 0; cb_idx < codebook_size; cb_idx++) {
+            for (std::size_t learner = 0; learner < 4u; learner++) {
+                const std::size_t src_base =
+                    (!codebooks_q_.empty() && codebooks_q_.size() >= (4u * codebook_size))
+                        ? (learner * codebook_size)
+                        : 0u;
+                codebook_interleaved_q_[cb_idx * 4u + learner] =
+                    (!codebooks_q_.empty() && codebooks_q_.size() >= (4u * codebook_size))
+                        ? codebooks_q_[src_base + cb_idx]
+                        : codebook_q_[cb_idx];
+            }
+        }
+    }
+
+    if (bias_interleaved_q_.empty() && !biases_q_.empty()) {
+        bias_interleaved_q_.resize(output_size_ * 4u);
+        for (std::size_t out_idx = 0; out_idx < output_size_; out_idx++) {
+            for (std::size_t learner = 0; learner < 4u; learner++) {
+                bias_interleaved_q_[out_idx * 4u + learner] =
+                    biases_q_[learner * output_size_ + out_idx];
+            }
+        }
+    }
+}
+
+bool CodebookDense::supportsInterleaved4DDiffSeq() const {
+    return (n_learners_ == 4u) && (weight_idx_interleaved_ != nullptr) &&
+           !codebook_interleaved_q_.empty();
+}
+
+void CodebookDense::computeInterleaved4DDiffSeq(std::size_t seq_len,
+                                                uint32_t* const inputs[4],
+                                                uint32_t* const outputs[4]) const {
+    if (!supportsInterleaved4DDiffSeq()) {
+        throw std::runtime_error("CodebookDense interleaved 4D diff-seq path is not available");
+    }
+
+    std::vector<int8_t> input_interleaved(seq_len * input_size_ * 4u, 0);
+    for (std::size_t seq = 0; seq < seq_len; seq++) {
+        for (std::size_t in_idx = 0; in_idx < input_size_; in_idx++) {
+            for (std::size_t learner = 0; learner < 4u; learner++) {
+                input_interleaved[((seq * input_size_) + in_idx) * 4u + learner] =
+                    unpackInt8(inputs[learner] + seq * (input_size_ / 4u), in_idx);
+            }
+        }
+    }
+
+    std::vector<int32_t> output_acc_interleaved(seq_len * output_size_ * 4u, 0);
+
+    gemm_t layer;
+    layer.seq_len = static_cast<uint16_t>(seq_len);
+    layer.input_size = static_cast<uint16_t>(input_size_);
+    layer.output_size = static_cast<uint16_t>(output_size_);
+    layer.n_words_row = static_cast<uint16_t>(n_words_row_);
+
+#ifdef SIMD
+    gemm_exec_compact_int_sve_interleaved_4D_diff_seq(
+        layer,
+        input_interleaved.data(),
+        weight_idx_interleaved_,
+        codebook_interleaved_q_.data(),
+        bias_interleaved_q_.empty() ? nullptr : bias_interleaved_q_.data(),
+        output_acc_interleaved.data(),
+        bits_per_cb_);
+#else
+    gemm_exec_compact_int_interleaved_4D_diff_seq(
+        layer,
+        input_interleaved.data(),
+        weight_idx_interleaved_,
+        codebook_interleaved_q_.data(),
+        bias_interleaved_q_.empty() ? nullptr : bias_interleaved_q_.data(),
+        output_acc_interleaved.data(),
+        bits_per_cb_);
+#endif
+
+    std::vector<int8_t> output_int8(seq_len * output_size_ * 4u, 0);
+    for (std::size_t idx = 0; idx < output_acc_interleaved.size(); idx++) {
+        output_int8[idx] = static_cast<int8_t>(output_acc_interleaved[idx]);
+    }
+
+    std::vector<int8_t> learner_output(seq_len * output_size_, 0);
+    for (std::size_t learner = 0; learner < 4u; learner++) {
+        for (std::size_t seq = 0; seq < seq_len; seq++) {
+            for (std::size_t out_idx = 0; out_idx < output_size_; out_idx++) {
+                learner_output[seq * output_size_ + out_idx] =
+                    output_int8[((seq * output_size_) + out_idx) * 4u + learner];
+            }
+        }
+        packInt8(learner_output, outputs[learner]);
+    }
 }
 
 

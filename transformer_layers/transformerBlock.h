@@ -4,6 +4,7 @@
 #pragma once // New
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector> // New
 
 #include "run_mode_config.h"
@@ -68,17 +69,25 @@ public:
                      std::size_t ff_size,
                      uint32_t** weightVector,
                      std::size_t kernelDim,
-                     std::size_t maxCol);
+                     std::size_t maxCol,
+                     std::size_t learner_idx = 0,
+                     std::string dump_dir = "");
 
     virtual ~TransformerBlock();
 
     void compute(std::size_t seq_len, uint32_t* input, uint32_t* output);
+    static void computeGroup4(std::size_t seq_len,
+                              TransformerBlock* blocks[4],
+                              uint32_t* const inputs[4],
+                              uint32_t* const outputs[4]);
 
 private:
     std::size_t num_heads_;
     std::size_t head_hidden_size_;
     std::size_t input_dim_;
     std::size_t ff_size_;
+    std::size_t learner_idx_;
+    std::string dump_dir_;
 
     std::vector<SingleHeadSelfAttn*> selfatten_;
 

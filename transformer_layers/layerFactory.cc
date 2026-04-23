@@ -18,9 +18,10 @@ namespace {
 CodebookDenseConfig makeCheckedCodebookConfig(
     const char* layer_name,
     std::size_t expected_input_size,
-    std::size_t expected_output_size) {
+    std::size_t expected_output_size,
+    std::size_t learner) {
 
-    CodebookDenseConfig cfg = makeCodebookDenseConfigFromRegistry(layer_name);
+    CodebookDenseConfig cfg = makeCodebookDenseConfigFromRegistry(layer_name, learner);
 
     if (cfg.input_size != expected_input_size || cfg.output_size != expected_output_size) {
         throw std::invalid_argument(
@@ -37,14 +38,15 @@ LinearLayerBundle LayerFactory::create(
     const std::string& layer_name,
     std::size_t input_size,
     std::size_t output_size,
-    uint32_t* fallback_weight) {
+    uint32_t* fallback_weight,
+    std::size_t learner) {
 
     LinearLayerBundle bundle;
 
 #if CFG_USE_CODEBOOK_GEMM
     try {
         CodebookDenseConfig cfg = makeCheckedCodebookConfig(
-            layer_name.c_str(), input_size, output_size);
+            layer_name.c_str(), input_size, output_size, learner);
 
         bundle.main = new CodebookDense(cfg);
 #if CFG_ENABLE_DEBUG_PRINT

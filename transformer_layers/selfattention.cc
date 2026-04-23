@@ -9,6 +9,43 @@
 #include "debuggerFunctions.h"
 
 #include "layerFactory.h"
+#include "codebookDense.h"
+
+namespace {
+
+void dumpPackedMatrixIfEnabled(const std::string& dump_dir,
+                               const std::string& filename,
+                               const uint32_t* buffer,
+                               std::size_t rows,
+                               std::size_t cols) {
+    if (dump_dir.empty()) {
+        return;
+    }
+    const std::string path = dump_dir + "/" + filename;
+    savePackedMatrixText(path.c_str(), buffer, rows, cols);
+}
+
+bool tryComputeGroupedCodebookDense4(LinearLayer* const layers[4],
+                                     std::size_t seq_len,
+                                     uint32_t* const inputs[4],
+                                     uint32_t* const outputs[4]) {
+    auto* primary = dynamic_cast<CodebookDense*>(layers[0]);
+    if (primary == nullptr || !primary->supportsInterleaved4DDiffSeq()) {
+        return false;
+    }
+
+    for (std::size_t learner = 1; learner < 4; learner++) {
+        auto* learner_layer = dynamic_cast<CodebookDense*>(layers[learner]);
+        if (learner_layer == nullptr || !learner_layer->supportsInterleaved4DDiffSeq()) {
+            return false;
+        }
+    }
+
+    primary->computeInterleaved4DDiffSeq(seq_len, inputs, outputs);
+    return true;
+}
+
+} // namespace
 
 // SingleHeadSelfAttn::SingleHeadSelfAttn(std::size_t pre_seq_len, std::size_t input_dim, std::size_t head_hidden_size,
 //                                        uint32_t **weightVector, std::size_t kernel_dim, std::size_t max_col) {
@@ -133,21 +170,25 @@ SingleHeadSelfAttn::SingleHeadSelfAttn(std::size_t head_idx,
                                        std::size_t head_hidden_size,
                                        uint32_t** weightVector,
                                        std::size_t kernel_dim,
-                                       std::size_t max_col) {
+                                       std::size_t max_col,
+                                       std::size_t learner_idx,
+                                       std::string dump_dir) {
     head_idx_ = head_idx;
     pre_seq_len_ = pre_seq_len;
     head_hidden_size_ = head_hidden_size;
     kernel_size_ = kernel_dim;
     max_col_ = max_col;
     input_dim_ = input_dim;
+    learner_idx_ = learner_idx;
+    dump_dir_ = dump_dir;
 
     const std::string q_name = "q_h" + std::to_string(head_idx_);
     const std::string k_name = "k_h" + std::to_string(head_idx_);
     const std::string v_name = "v_h" + std::to_string(head_idx_);
 
-    auto q_bundle = LayerFactory::create(q_name, input_dim, head_hidden_size, weightVector[0]);
-    auto k_bundle = LayerFactory::create(k_name, input_dim, head_hidden_size, weightVector[1]);
-    auto v_bundle = LayerFactory::create(v_name, input_dim, head_hidden_size, weightVector[2]);
+    auto q_bundle = LayerFactory::create(q_name, input_dim, head_hidden_size, weightVector[0], learner_idx_);
+    auto k_bundle = LayerFactory::create(k_name, input_dim, head_hidden_size, weightVector[1], learner_idx_);
+    auto v_bundle = LayerFactory::create(v_name, input_dim, head_hidden_size, weightVector[2], learner_idx_);
 
     query_layer_ = q_bundle.main;
     key_layer_ = k_bundle.main;
@@ -219,6 +260,25 @@ void SingleHeadSelfAttn::compute(std::size_t seq_len, uint32_t* input, uint32_t*
     key_layer_->compute(seq_len, input, key_layer_out_);
     value_layer_->compute(seq_len, input, value_layer_out_);
 
+    dumpPackedMatrixIfEnabled(
+        dump_dir_,
+        "q_h" + std::to_string(head_idx_) + ".txt",
+        query_layer_out_,
+        seq_len,
+        head_hidden_size_);
+    dumpPackedMatrixIfEnabled(
+        dump_dir_,
+        "k_h" + std::to_string(head_idx_) + ".txt",
+        key_layer_out_,
+        seq_len,
+        head_hidden_size_);
+    dumpPackedMatrixIfEnabled(
+        dump_dir_,
+        "v_h" + std::to_string(head_idx_) + ".txt",
+        value_layer_out_,
+        seq_len,
+        head_hidden_size_);
+
 #if CFG_USE_CODEBOOK_REFERENCE
     std::cout << "[DEBUG] CFG_USE_CODEBOOK_REFERENCE active in SingleHeadSelfAttn" << std::endl;
     std::fill(query_reference_out_, query_reference_out_ + ((seq_len * head_hidden_size_) >> 2), 0u);
@@ -275,6 +335,13 @@ void SingleHeadSelfAttn::compute(std::size_t seq_len, uint32_t* input, uint32_t*
     smmComputeRWMA(seq_len, attention_scores_, output, value_layer_out_,
                    seq_len, head_hidden_size_);
 #endif
+
+    dumpPackedMatrixIfEnabled(
+        dump_dir_,
+        "head_out_h" + std::to_string(head_idx_) + ".txt",
+        output,
+        seq_len,
+        head_hidden_size_);
 #else
     std::cout << "BWMA method" << std::endl;
 
@@ -301,4 +368,179 @@ void SingleHeadSelfAttn::compute(std::size_t seq_len, uint32_t* input, uint32_t*
 #endif
 
     softmax_->post_softmax(output, seq_len, head_hidden_size_);
+}
+
+void SingleHeadSelfAttn::computeGroup4(std::size_t seq_len,
+                                       SingleHeadSelfAttn* heads[4],
+                                       uint32_t* const inputs[4],
+                                       uint32_t* const outputs[4]) {
+    LinearLayer* query_layers[4] = {
+        heads[0]->query_layer_,
+        heads[1]->query_layer_,
+        heads[2]->query_layer_,
+        heads[3]->query_layer_,
+    };
+    LinearLayer* key_layers[4] = {
+        heads[0]->key_layer_,
+        heads[1]->key_layer_,
+        heads[2]->key_layer_,
+        heads[3]->key_layer_,
+    };
+    LinearLayer* value_layers[4] = {
+        heads[0]->value_layer_,
+        heads[1]->value_layer_,
+        heads[2]->value_layer_,
+        heads[3]->value_layer_,
+    };
+
+    uint32_t* query_outputs[4] = {
+        heads[0]->query_layer_out_,
+        heads[1]->query_layer_out_,
+        heads[2]->query_layer_out_,
+        heads[3]->query_layer_out_,
+    };
+    uint32_t* key_outputs[4] = {
+        heads[0]->key_layer_out_,
+        heads[1]->key_layer_out_,
+        heads[2]->key_layer_out_,
+        heads[3]->key_layer_out_,
+    };
+    uint32_t* value_outputs[4] = {
+        heads[0]->value_layer_out_,
+        heads[1]->value_layer_out_,
+        heads[2]->value_layer_out_,
+        heads[3]->value_layer_out_,
+    };
+
+    if (!tryComputeGroupedCodebookDense4(query_layers, seq_len, inputs, query_outputs)) {
+        for (std::size_t learner = 0; learner < 4; learner++) {
+            heads[learner]->query_layer_->compute(seq_len, inputs[learner], query_outputs[learner]);
+        }
+    }
+    if (!tryComputeGroupedCodebookDense4(key_layers, seq_len, inputs, key_outputs)) {
+        for (std::size_t learner = 0; learner < 4; learner++) {
+            heads[learner]->key_layer_->compute(seq_len, inputs[learner], key_outputs[learner]);
+        }
+    }
+    if (!tryComputeGroupedCodebookDense4(value_layers, seq_len, inputs, value_outputs)) {
+        for (std::size_t learner = 0; learner < 4; learner++) {
+            heads[learner]->value_layer_->compute(seq_len, inputs[learner], value_outputs[learner]);
+        }
+    }
+
+    for (std::size_t learner = 0; learner < 4; learner++) {
+        SingleHeadSelfAttn* self = heads[learner];
+
+        dumpPackedMatrixIfEnabled(
+            self->dump_dir_,
+            "q_h" + std::to_string(self->head_idx_) + ".txt",
+            self->query_layer_out_,
+            seq_len,
+            self->head_hidden_size_);
+        dumpPackedMatrixIfEnabled(
+            self->dump_dir_,
+            "k_h" + std::to_string(self->head_idx_) + ".txt",
+            self->key_layer_out_,
+            seq_len,
+            self->head_hidden_size_);
+        dumpPackedMatrixIfEnabled(
+            self->dump_dir_,
+            "v_h" + std::to_string(self->head_idx_) + ".txt",
+            self->value_layer_out_,
+            seq_len,
+            self->head_hidden_size_);
+
+#if CFG_USE_CODEBOOK_REFERENCE
+        std::fill(self->query_reference_out_,
+                  self->query_reference_out_ + ((seq_len * self->head_hidden_size_) >> 2),
+                  0u);
+        std::fill(self->key_reference_out_,
+                  self->key_reference_out_ + ((seq_len * self->head_hidden_size_) >> 2),
+                  0u);
+        std::fill(self->value_reference_out_,
+                  self->value_reference_out_ + ((seq_len * self->head_hidden_size_) >> 2),
+                  0u);
+
+        self->query_reference_->compute(seq_len, inputs[learner], self->query_reference_out_);
+        self->key_reference_->compute(seq_len, inputs[learner], self->key_reference_out_);
+        self->value_reference_->compute(seq_len, inputs[learner], self->value_reference_out_);
+
+        const std::string q_name =
+            "q_h" + std::to_string(self->head_idx_) + "_learner" + std::to_string(self->learner_idx_);
+        const std::string k_name =
+            "k_h" + std::to_string(self->head_idx_) + "_learner" + std::to_string(self->learner_idx_);
+        const std::string v_name =
+            "v_h" + std::to_string(self->head_idx_) + "_learner" + std::to_string(self->learner_idx_);
+
+        comparePackedBuffers(q_name.c_str(),
+                             self->query_reference_out_, self->query_layer_out_,
+                             (seq_len * self->head_hidden_size_) >> 2);
+        comparePackedBuffers(k_name.c_str(),
+                             self->key_reference_out_, self->key_layer_out_,
+                             (seq_len * self->head_hidden_size_) >> 2);
+        comparePackedBuffers(v_name.c_str(),
+                             self->value_reference_out_, self->value_layer_out_,
+                             (seq_len * self->head_hidden_size_) >> 2);
+#endif
+
+#ifndef BWMA
+        std::cout << "RWMA method" << std::endl;
+
+        Transpose::transpose(self->key_layer_out_,
+                             self->key_transposed_layer_out_,
+                             self->head_hidden_size_,
+                             self->pre_seq_len_);
+
+#ifdef SIMD
+        simdComputeRWMA(seq_len, self->query_layer_out_, self->attention_scores_,
+                        self->key_transposed_layer_out_, self->head_hidden_size_, seq_len);
+#else
+        smmComputeRWMA(seq_len, self->query_layer_out_, self->attention_scores_,
+                       self->key_transposed_layer_out_, self->head_hidden_size_, seq_len);
+#endif
+
+        self->softmax_->compute(self->attention_scores_, seq_len);
+
+#ifdef SIMD
+        simdComputeRWMA(seq_len, self->attention_scores_, outputs[learner], self->value_layer_out_,
+                        seq_len, self->head_hidden_size_);
+#else
+        smmComputeRWMA(seq_len, self->attention_scores_, outputs[learner], self->value_layer_out_,
+                       seq_len, self->head_hidden_size_);
+#endif
+
+        dumpPackedMatrixIfEnabled(
+            self->dump_dir_,
+            "head_out_h" + std::to_string(self->head_idx_) + ".txt",
+            outputs[learner],
+            seq_len,
+            self->head_hidden_size_);
+#else
+        std::cout << "BWMA method" << std::endl;
+
+        Transpose::transpose_rearranged(self->key_layer_out_, self->key_transposed_layer_out_,
+                                        self->head_hidden_size_, self->pre_seq_len_,
+                                        self->kernel_size_, self->max_col_);
+
+#ifdef SIMD
+        simdComputeBWMA(seq_len, self->query_layer_out_, self->attention_scores_,
+                        self->key_transposed_layer_out_, self->head_hidden_size_, seq_len);
+#else
+        smmComputeBWMA(seq_len, self->query_layer_out_, self->attention_scores_,
+                       self->key_transposed_layer_out_, self->head_hidden_size_, seq_len);
+#endif
+
+        self->softmax_->computeRearranged(self->attention_scores_, seq_len, self->kernel_size_);
+
+#ifdef SIMD
+        simdComputeBWMA(seq_len, self->attention_scores_, outputs[learner], self->value_layer_out_,
+                        seq_len, self->head_hidden_size_);
+#else
+        smmComputeBWMA(seq_len, self->attention_scores_, outputs[learner], self->value_layer_out_,
+                       seq_len, self->head_hidden_size_);
+#endif
+#endif
+
+        self->softmax_->post_softmax(outputs[learner], seq_len, self->head_hidden_size_);
+    }
 }
