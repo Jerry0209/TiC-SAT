@@ -372,8 +372,11 @@ void CodebookDense::buildInterleavedCachesIfNeeded() {
 }
 
 bool CodebookDense::supportsInterleaved4DDiffSeq() const {
-    return (n_learners_ == 4u) && (weight_idx_interleaved_ != nullptr) &&
-           !codebook_interleaved_q_.empty();
+    if ((n_learners_ != 4u) || codebook_interleaved_q_.empty()) {
+        return false;
+    }
+
+    return same_seq_ ? (weight_idx_ != nullptr) : (weight_idx_interleaved_ != nullptr);
 }
 
 // Execute 4 learners together using the shared interleaved layout:
@@ -407,25 +410,47 @@ void CodebookDense::computeInterleaved4DDiffSeq(std::size_t seq_len,
     layer.n_words_row = static_cast<uint16_t>(n_words_row_);
 
 #ifdef SIMD
-    // SVE backend for the exact same 4-learner interleaved problem shape.
-    gemm_exec_compact_int_sve_interleaved_4D_diff_seq(
-        layer,
-        input_interleaved.data(),
-        weight_idx_interleaved_,
-        codebook_interleaved_q_.data(),
-        bias_interleaved_q_.empty() ? nullptr : bias_interleaved_q_.data(),
-        output_acc_interleaved.data(),
-        bits_per_cb_);
+    if (same_seq_) {
+        // Shared-index path: one packed index stream drives all 4 learners.
+        gemm_exec_compact_int_sve_interleaved_4D_same_seq(
+            layer,
+            input_interleaved.data(),
+            weight_idx_,
+            codebook_interleaved_q_.data(),
+            bias_interleaved_q_.empty() ? nullptr : bias_interleaved_q_.data(),
+            output_acc_interleaved.data(),
+            bits_per_cb_);
+    } else {
+        // Per-learner index path: each learner has its own packed index stream.
+        gemm_exec_compact_int_sve_interleaved_4D_diff_seq(
+            layer,
+            input_interleaved.data(),
+            weight_idx_interleaved_,
+            codebook_interleaved_q_.data(),
+            bias_interleaved_q_.empty() ? nullptr : bias_interleaved_q_.data(),
+            output_acc_interleaved.data(),
+            bits_per_cb_);
+    }
 #else
-    // Scalar fallback for the same data layout when the build has no SIMD/SVE.
-    gemm_exec_compact_int_interleaved_4D_diff_seq(
-        layer,
-        input_interleaved.data(),
-        weight_idx_interleaved_,
-        codebook_interleaved_q_.data(),
-        bias_interleaved_q_.empty() ? nullptr : bias_interleaved_q_.data(),
-        output_acc_interleaved.data(),
-        bits_per_cb_);
+    if (same_seq_) {
+        gemm_exec_compact_int_interleaved_4D_same_seq(
+            layer,
+            input_interleaved.data(),
+            weight_idx_,
+            codebook_interleaved_q_.data(),
+            bias_interleaved_q_.empty() ? nullptr : bias_interleaved_q_.data(),
+            output_acc_interleaved.data(),
+            bits_per_cb_);
+    } else {
+        gemm_exec_compact_int_interleaved_4D_diff_seq(
+            layer,
+            input_interleaved.data(),
+            weight_idx_interleaved_,
+            codebook_interleaved_q_.data(),
+            bias_interleaved_q_.empty() ? nullptr : bias_interleaved_q_.data(),
+            output_acc_interleaved.data(),
+            bits_per_cb_);
+    }
 #endif
 
     std::vector<int8_t> output_int8(seq_len * output_size_ * 4u, 0);
