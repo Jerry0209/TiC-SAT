@@ -269,6 +269,9 @@ void printPackedTensorAsPythonList(const std::string& var_name,
     std::cout << "]\n";
 }
 
+// Return true only when all 4 layers are CodebookDense objects that already
+// prepared the interleaved 4D caches. Only in that case do we collapse 4 learner
+// executions into one GEMM call; otherwise callers must run each layer separately.
 bool tryComputeGroupedCodebookDense4(LinearLayer* const layers[4],
                                      std::size_t seq_len,
                                      uint32_t* const inputs[4],

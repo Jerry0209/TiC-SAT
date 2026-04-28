@@ -96,15 +96,25 @@
 #define CFG_ENABLE_DEBUG_PRINT 0
 #endif
 
+// Pure codebook mode means the run should rely entirely on the generated
+// CodebookDense registry for layer weights. In this mode we do not build Dense
+// fallback/reference weights unless reference validation is explicitly enabled.
+#if CFG_USE_CODEBOOK_GEMM && !CFG_USE_CODEBOOK_REFERENCE
+#define CFG_CODEBOOK_ONLY_MODE 1
+#else
+#define CFG_CODEBOOK_ONLY_MODE 0
+#endif
+
 // --------------------------------------------------
 // Sanity checks
 // --------------------------------------------------
 
-// Normal Codebook GEMM runs need notebook-generated dense weights for fallback
-// and optional reference comparison. Profiling-only runs use the generated
-// registry directly and may skip the notebook .bin weight files.
-#if CFG_USE_CODEBOOK_GEMM && !CFG_PROFILE_GEMM_ONLY && !CFG_USE_NOTEBOOK_GENERATED_WEIGHTS
-#error "USE_CODEBOOK_GEMM requires USE_NOTEBOOK_GENERATED_WEIGHTS unless PROFILE_GEMM_ONLY is enabled."
+// Dense fallback/reference runs still need notebook-generated per-learner .bin
+// weights. Pure codebook runs skip Dense weights entirely, so they may use the
+// generated registry without notebook-generated .bin files.
+#if CFG_USE_CODEBOOK_GEMM && !CFG_PROFILE_GEMM_ONLY && \
+    !CFG_CODEBOOK_ONLY_MODE && !CFG_USE_NOTEBOOK_GENERATED_WEIGHTS
+#error "Non-profile Codebook GEMM requires USE_NOTEBOOK_GENERATED_WEIGHTS when Dense fallback/reference is enabled."
 #endif
 
 // Reference comparison only makes sense when codebook GEMM is enabled.

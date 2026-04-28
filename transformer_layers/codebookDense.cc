@@ -376,6 +376,11 @@ bool CodebookDense::supportsInterleaved4DDiffSeq() const {
            !codebook_interleaved_q_.empty();
 }
 
+// Execute 4 learners together using the shared interleaved layout:
+//   input_interleaved   = [token][input_channel][learner]
+//   output_interleaved  = [token][output_channel][learner]
+// The only difference between the two GEMM calls below is the backend: with
+// SIMD defined we use the SVE kernel, otherwise we use the scalar C fallback.
 void CodebookDense::computeInterleaved4DDiffSeq(std::size_t seq_len,
                                                 uint32_t* const inputs[4],
                                                 uint32_t* const outputs[4]) const {
@@ -402,6 +407,7 @@ void CodebookDense::computeInterleaved4DDiffSeq(std::size_t seq_len,
     layer.n_words_row = static_cast<uint16_t>(n_words_row_);
 
 #ifdef SIMD
+    // SVE backend for the exact same 4-learner interleaved problem shape.
     gemm_exec_compact_int_sve_interleaved_4D_diff_seq(
         layer,
         input_interleaved.data(),
@@ -411,6 +417,7 @@ void CodebookDense::computeInterleaved4DDiffSeq(std::size_t seq_len,
         output_acc_interleaved.data(),
         bits_per_cb_);
 #else
+    // Scalar fallback for the same data layout when the build has no SIMD/SVE.
     gemm_exec_compact_int_interleaved_4D_diff_seq(
         layer,
         input_interleaved.data(),

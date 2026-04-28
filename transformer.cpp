@@ -210,16 +210,20 @@ void test() {
             const std::string& learner_notebook_weights_dir,
             const std::string& learner_dump_dir) -> TransformerBlock* {
         std::vector<uint32_t*> weightVec(3 * NUM_HEAD + 3, nullptr);
-#if !(CFG_PROFILE_GEMM_ONLY && CFG_USE_CODEBOOK_GEMM)
+#if !CFG_CODEBOOK_ONLY_MODE
         const int head_qkv_size = D_Q * D_MODEL >> 2;
 #endif
 
         for (int n = 0; n < NUM_HEAD; n++) {
-            volatile auto query_kernel = new uint32_t[D_Q * D_MODEL >> 2]();
-            volatile auto key_kernel = new uint32_t[D_Q * D_MODEL >> 2]();
-            volatile auto value_kernel = new uint32_t[D_Q * D_MODEL >> 2]();
+            uint32_t* query_kernel = nullptr;
+            uint32_t* key_kernel = nullptr;
+            uint32_t* value_kernel = nullptr;
 
-#if !(CFG_PROFILE_GEMM_ONLY && CFG_USE_CODEBOOK_GEMM)
+#if !CFG_CODEBOOK_ONLY_MODE
+            query_kernel = new uint32_t[D_Q * D_MODEL >> 2]();
+            key_kernel = new uint32_t[D_Q * D_MODEL >> 2]();
+            value_kernel = new uint32_t[D_Q * D_MODEL >> 2]();
+
             bool q_loaded_from_notebook = false;
             bool k_loaded_from_notebook = false;
             bool v_loaded_from_notebook = false;
@@ -297,11 +301,15 @@ void test() {
             weightVec[n * 3 + 2] = value_kernel;
         }
 
-        volatile auto condense_kernel = new uint32_t[NUM_HEAD * D_Q * D_MODEL >> 2]();
-        volatile auto ff0_kernel = new uint32_t[D_MODEL * D_FF >> 2]();
-        volatile auto ff1_kernel = new uint32_t[D_FF * D_MODEL >> 2]();
+        uint32_t* condense_kernel = nullptr;
+        uint32_t* ff0_kernel = nullptr;
+        uint32_t* ff1_kernel = nullptr;
 
-#if !(CFG_PROFILE_GEMM_ONLY && CFG_USE_CODEBOOK_GEMM)
+#if !CFG_CODEBOOK_ONLY_MODE
+        condense_kernel = new uint32_t[NUM_HEAD * D_Q * D_MODEL >> 2]();
+        ff0_kernel = new uint32_t[D_MODEL * D_FF >> 2]();
+        ff1_kernel = new uint32_t[D_FF * D_MODEL >> 2]();
+
         int n = -1;
         bool condense_loaded_from_notebook = false;
         bool ff0_loaded_from_notebook = false;
@@ -405,6 +413,10 @@ void test() {
             learner_dump_dir);
     };
 
+    // The grouped execution path is only enabled when the registry exposes
+    // exactly 4 learners. In that case we build 4 TransformerBlock objects and
+    // run them together so the downstream CodebookDense layers can reuse the
+    // interleaved 4D diff-seq GEMM kernels.
     if (learner_count == 4) {
         TransformerBlock* grouped_blocks[4] = {nullptr, nullptr, nullptr, nullptr};
         uint32_t* grouped_inputs[4] = {tensor_in, tensor_in, tensor_in, tensor_in};
@@ -431,6 +443,10 @@ void test() {
                 learner_dump_dir);
         }
 
+        // This call does not jump to GEMM directly. It enters the grouped
+        // transformer path, where each attention/FFN dense layer first tries the
+        // 4-learner CodebookDense fast path and only then dispatches to either the
+        // SVE or scalar interleaved GEMM backend.
         TransformerBlock::computeGroup4(D_SEQ, grouped_blocks, grouped_inputs, grouped_outputs);
 
         for (std::size_t learner_idx = 0; learner_idx < learner_count; learner_idx++) {

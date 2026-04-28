@@ -57,6 +57,12 @@ LinearLayerBundle LayerFactory::create(
         throw std::runtime_error(
             "PROFILE_GEMM_ONLY requires a matching CodebookDense registry entry for " +
             layer_name + ": " + ex.what());
+#elif CFG_CODEBOOK_ONLY_MODE
+        throw std::runtime_error(
+            "Codebook-only mode requires a matching CodebookDense registry entry for " +
+            layer_name +
+            ". Dense fallback weights are intentionally skipped when "
+            "ENABLE_CODEBOOK_REFERENCE is disabled: " + ex.what());
 #else
         bundle.main = new Dense(input_size, output_size, fallback_weight);
 #if CFG_ENABLE_DEBUG_PRINT

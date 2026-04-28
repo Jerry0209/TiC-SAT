@@ -299,6 +299,10 @@ void SingleHeadSelfAttn::compute(std::size_t seq_len, uint32_t* input, uint32_t*
     softmax_->post_softmax(output, seq_len, head_hidden_size_);
 }
 
+// Grouped self-attention entry used by TransformerBlock::computeGroup4().
+// For Q/K/V projection we first try to fuse 4 learners into one interleaved
+// CodebookDense GEMM call. If that is not available, we fall back to 4 normal
+// per-learner Dense::compute() calls.
 void SingleHeadSelfAttn::computeGroup4(std::size_t seq_len,
                                        SingleHeadSelfAttn* heads[4],
                                        uint32_t* const inputs[4],
@@ -341,6 +345,9 @@ void SingleHeadSelfAttn::computeGroup4(std::size_t seq_len,
         heads[3]->value_layer_out_,
     };
 
+    // Successful grouped dispatch here means CodebookDense::computeInterleaved4DDiffSeq()
+    // will be used, which is the point where the code eventually chooses between
+    // gemm_exec_compact_int_sve_interleaved_4D_diff_seq() and the scalar fallback.
     if (!tryComputeGroupedCodebookDense4(query_layers, seq_len, inputs, query_outputs)) {
         for (std::size_t learner = 0; learner < 4; learner++) {
             heads[learner]->query_layer_->compute(seq_len, inputs[learner], query_outputs[learner]);

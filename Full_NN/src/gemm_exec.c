@@ -120,6 +120,9 @@ void gemm_exec_compact_int(gemm_t gemm_layer,
     }
 }
 
+// Scalar reference/fallback kernel for the grouped 4-learner path.
+// Each output element stores 4 parallel accumulators, one per learner, so the
+// caller can process 4 different sequences/weight sets in a single traversal.
 void gemm_exec_compact_int_interleaved_4D_diff_seq(gemm_t gemm_layer,
                                                    const int8_t *in_interleaved,
                                                    const uint32_t *weight_idx_interleaved,
@@ -263,6 +266,9 @@ void gemm_exec_compact_int_sve(gemm_t gemm_layer,
     }
 }
 
+// SVE version of the same grouped 4-learner kernel. The input/output layout
+// matches gemm_exec_compact_int_interleaved_4D_diff_seq(); only the inner math
+// changes, so higher layers select between them purely with #ifdef SIMD.
 void gemm_exec_compact_int_sve_interleaved_4D_diff_seq(
     gemm_t gemm_layer,
     const int8_t *in_interleaved,
