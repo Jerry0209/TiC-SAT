@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <cstdlib>
 
+#include "codebookDense.h"
+
 void print_weight(uint32_t* kernel, int n_row, int n_col){
     for (int i=0; i< n_row; i++){
         for (int j=0; j<n_col; j++){
@@ -227,6 +229,64 @@ void savePackedMatrixText(const char *filename,
     }
 
     fout.close();
+}
+
+void dumpPackedMatrixIfEnabled(const std::string& dump_dir,
+                               const std::string& filename,
+                               const uint32_t* buffer,
+                               std::size_t rows,
+                               std::size_t cols) {
+    if (dump_dir.empty()) {
+        return;
+    }
+
+    const std::string path = dump_dir + "/" + filename;
+    savePackedMatrixText(path.c_str(), buffer, rows, cols);
+}
+
+void printPackedTensorAsPythonList(const std::string& var_name,
+                                   const uint32_t* packed,
+                                   std::size_t rows,
+                                   std::size_t cols) {
+    const std::size_t packed_cols = (cols + 3) / 4;
+
+    std::cout << var_name << " = [\n";
+    for (std::size_t r = 0; r < rows; ++r) {
+        std::cout << "    [";
+        for (std::size_t c = 0; c < cols; ++c) {
+            const int v = static_cast<int>(unpackPackedValue(packed + r * packed_cols, c));
+            std::cout << v;
+            if (c + 1 != cols) {
+                std::cout << ", ";
+            }
+        }
+        std::cout << "]";
+        if (r + 1 != rows) {
+            std::cout << ",";
+        }
+        std::cout << "\n";
+    }
+    std::cout << "]\n";
+}
+
+bool tryComputeGroupedCodebookDense4(LinearLayer* const layers[4],
+                                     std::size_t seq_len,
+                                     uint32_t* const inputs[4],
+                                     uint32_t* const outputs[4]) {
+    auto* primary = dynamic_cast<CodebookDense*>(layers[0]);
+    if (primary == nullptr || !primary->supportsInterleaved4DDiffSeq()) {
+        return false;
+    }
+
+    for (std::size_t learner = 1; learner < 4; learner++) {
+        auto* learner_layer = dynamic_cast<CodebookDense*>(layers[learner]);
+        if (learner_layer == nullptr || !learner_layer->supportsInterleaved4DDiffSeq()) {
+            return false;
+        }
+    }
+
+    primary->computeInterleaved4DDiffSeq(seq_len, inputs, outputs);
+    return true;
 }
 
 /* Unpack the results and print 

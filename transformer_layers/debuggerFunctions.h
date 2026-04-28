@@ -5,9 +5,11 @@
 #ifndef FVLLMONTITRANSFORMER_DEBUGGERFUNCTIONS_H
 #define FVLLMONTITRANSFORMER_DEBUGGERFUNCTIONS_H
 #include "util.h"
+#include "linearLayer.h"
 #include <iostream>
 #include <fstream>
 #include <cstdint>
+#include <string>
 
 
 
@@ -32,6 +34,22 @@ void savePackedMatrixText(const char *filename,
                           const uint32_t *buffer,
                           std::size_t rows,
                           std::size_t cols);
+
+void dumpPackedMatrixIfEnabled(const std::string& dump_dir,
+                               const std::string& filename,
+                               const uint32_t* buffer,
+                               std::size_t rows,
+                               std::size_t cols);
+
+void printPackedTensorAsPythonList(const std::string& var_name,
+                                   const uint32_t* packed,
+                                   std::size_t rows,
+                                   std::size_t cols);
+
+bool tryComputeGroupedCodebookDense4(LinearLayer* const layers[4],
+                                     std::size_t seq_len,
+                                     uint32_t* const inputs[4],
+                                     uint32_t* const outputs[4]);
 
 void printPackedPreview(const char *label,
                         const uint32_t *buffer,

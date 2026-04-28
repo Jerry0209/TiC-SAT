@@ -9,43 +9,6 @@
 #include "debuggerFunctions.h"
 
 #include "layerFactory.h"
-#include "codebookDense.h"
-
-namespace {
-
-void dumpPackedMatrixIfEnabled(const std::string& dump_dir,
-                               const std::string& filename,
-                               const uint32_t* buffer,
-                               std::size_t rows,
-                               std::size_t cols) {
-    if (dump_dir.empty()) {
-        return;
-    }
-    const std::string path = dump_dir + "/" + filename;
-    savePackedMatrixText(path.c_str(), buffer, rows, cols);
-}
-
-bool tryComputeGroupedCodebookDense4(LinearLayer* const layers[4],
-                                     std::size_t seq_len,
-                                     uint32_t* const inputs[4],
-                                     uint32_t* const outputs[4]) {
-    auto* primary = dynamic_cast<CodebookDense*>(layers[0]);
-    if (primary == nullptr || !primary->supportsInterleaved4DDiffSeq()) {
-        return false;
-    }
-
-    for (std::size_t learner = 1; learner < 4; learner++) {
-        auto* learner_layer = dynamic_cast<CodebookDense*>(layers[learner]);
-        if (learner_layer == nullptr || !learner_layer->supportsInterleaved4DDiffSeq()) {
-            return false;
-        }
-    }
-
-    primary->computeInterleaved4DDiffSeq(seq_len, inputs, outputs);
-    return true;
-}
-
-} // namespace
 
 // SingleHeadSelfAttn::SingleHeadSelfAttn(std::size_t pre_seq_len, std::size_t input_dim, std::size_t head_hidden_size,
 //                                        uint32_t **weightVector, std::size_t kernel_dim, std::size_t max_col) {
@@ -129,40 +92,6 @@ bool tryComputeGroupedCodebookDense4(LinearLayer* const layers[4],
 // }
 
 /* Flexible configuration of the number of heads and codebooked GEMM */
-
-namespace {
-
-int8_t unpackPackedInt8(const uint32_t* packed, std::size_t elem_idx) {
-    std::size_t word_idx = elem_idx / 4;
-    std::size_t byte_idx = elem_idx % 4;
-    uint32_t word = packed[word_idx];
-    return static_cast<int8_t>((word >> (byte_idx * 8)) & 0xFF);
-}
-
-void printPackedTensorAsPythonList(const std::string& var_name,
-                                   const uint32_t* packed,
-                                   std::size_t rows,
-                                   std::size_t cols) {
-    std::cout << var_name << " = [\n";
-    for (std::size_t r = 0; r < rows; ++r) {
-        std::cout << "    [";
-        for (std::size_t c = 0; c < cols; ++c) {
-            int v = static_cast<int>(unpackPackedInt8(packed + r * (cols / 4), c));
-            std::cout << v;
-            if (c + 1 != cols) {
-                std::cout << ", ";
-            }
-        }
-        std::cout << "]";
-        if (r + 1 != rows) {
-            std::cout << ",";
-        }
-        std::cout << "\n";
-    }
-    std::cout << "]\n";
-}
-
-}
 
 SingleHeadSelfAttn::SingleHeadSelfAttn(std::size_t head_idx,
                                        std::size_t pre_seq_len,

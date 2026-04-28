@@ -12,7 +12,6 @@
 
 #include "layerFactory.h"
 #include "run_mode_config.h"
-#include "codebookDense.h"
 
 
 namespace {
@@ -22,38 +21,6 @@ void runM5IfAvailable(const char* command) {
     if (std::system("command -v m5 >/dev/null 2>&1") == 0) {
         std::system(command);
     }
-}
-
-void dumpPackedMatrixIfEnabled(const std::string& dump_dir,
-                               const std::string& filename,
-                               const uint32_t* buffer,
-                               std::size_t rows,
-                               std::size_t cols) {
-    if (dump_dir.empty()) {
-        return;
-    }
-    const std::string path = dump_dir + "/" + filename;
-    savePackedMatrixText(path.c_str(), buffer, rows, cols);
-}
-
-bool tryComputeGroupedCodebookDense4(LinearLayer* const layers[4],
-                                     std::size_t seq_len,
-                                     uint32_t* const inputs[4],
-                                     uint32_t* const outputs[4]) {
-    auto* primary = dynamic_cast<CodebookDense*>(layers[0]);
-    if (primary == nullptr || !primary->supportsInterleaved4DDiffSeq()) {
-        return false;
-    }
-
-    for (std::size_t learner = 1; learner < 4; learner++) {
-        auto* learner_layer = dynamic_cast<CodebookDense*>(layers[learner]);
-        if (learner_layer == nullptr || !learner_layer->supportsInterleaved4DDiffSeq()) {
-            return false;
-        }
-    }
-
-    primary->computeInterleaved4DDiffSeq(seq_len, inputs, outputs);
-    return true;
 }
 
 } // namespace
