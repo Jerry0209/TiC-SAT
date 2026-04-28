@@ -30,12 +30,22 @@ public:
     virtual ~TransformerBlock();
 
     void compute(std::size_t seq_len, uint32_t* input, uint32_t* output);
+    static void computeGroup2(std::size_t seq_len,
+                              TransformerBlock* blocks[2],
+                              uint32_t* const inputs[2],
+                              uint32_t* const outputs[2]);
     static void computeGroup4(std::size_t seq_len,
                               TransformerBlock* blocks[4],
                               uint32_t* const inputs[4],
                               uint32_t* const outputs[4]);
 
 private:
+    template <std::size_t LearnerCount>
+    static void computeGroupImpl(std::size_t seq_len,
+                                 TransformerBlock** blocks,
+                                 uint32_t* const* inputs,
+                                 uint32_t* const* outputs);
+
     std::size_t num_heads_;
     std::size_t head_hidden_size_;
     std::size_t input_dim_;

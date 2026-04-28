@@ -269,6 +269,26 @@ void printPackedTensorAsPythonList(const std::string& var_name,
     std::cout << "]\n";
 }
 
+// Return true only when both layers are CodebookDense objects that can use the
+// 2D same-sequence grouped path. Otherwise callers must run each layer normally.
+bool tryComputeGroupedCodebookDense2(LinearLayer* const layers[2],
+                                     std::size_t seq_len,
+                                     uint32_t* const inputs[2],
+                                     uint32_t* const outputs[2]) {
+    auto* primary = dynamic_cast<CodebookDense*>(layers[0]);
+    if (primary == nullptr || !primary->supportsInterleaved2DSameSeq()) {
+        return false;
+    }
+
+    auto* learner_layer = dynamic_cast<CodebookDense*>(layers[1]);
+    if (learner_layer == nullptr || !learner_layer->supportsInterleaved2DSameSeq()) {
+        return false;
+    }
+
+    primary->computeInterleaved2DSameSeq(seq_len, inputs, outputs);
+    return true;
+}
+
 // Return true only when all 4 layers are CodebookDense objects that already
 // prepared the interleaved 4D caches. Only in that case do we collapse 4 learner
 // executions into one GEMM call; otherwise callers must run each layer separately.

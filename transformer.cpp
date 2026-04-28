@@ -413,10 +413,44 @@ void test() {
             learner_dump_dir);
     };
 
-    // The grouped execution path is only enabled when the registry exposes
-    // exactly 4 learners. In that case we build 4 TransformerBlock objects and
-    // run them together so the downstream CodebookDense layers can reuse the
-    // interleaved 4D diff-seq GEMM kernels.
+    // The grouped execution path is enabled when the registry exposes a learner
+    // count that has an interleaved GEMM backend. With 2 learners, CodebookDense
+    // only groups same-sequence layers; with 4 learners, it chooses same-seq or
+    // diff-seq internally from the registry metadata.
+    if (learner_count == 2) {
+        TransformerBlock* grouped_blocks[2] = {nullptr, nullptr};
+        uint32_t* grouped_inputs[2] = {tensor_in, tensor_in};
+        uint32_t* grouped_outputs[2] = {
+            new uint32_t[D_SEQ * D_MODEL >> 2](),
+            new uint32_t[D_SEQ * D_MODEL >> 2](),
+        };
+
+        for (std::size_t learner_idx = 0; learner_idx < learner_count; learner_idx++) {
+            std::cout << "\n=============== LEARNER " << learner_idx
+                      << " ===============\n" << std::endl;
+
+            const std::string learner_notebook_weights_dir =
+                getNotebookWeightsDirForLearner(notebook_weights_dir, learner_idx);
+            const std::string learner_dump_dir =
+                multiple_learner_output_root + "/learner" + std::to_string(learner_idx);
+
+            std::filesystem::create_directories(learner_dump_dir);
+            grouped_blocks[learner_idx] = buildTransformerBlockForLearner(
+                learner_idx,
+                learner_notebook_weights_dir,
+                learner_dump_dir);
+        }
+
+        TransformerBlock::computeGroup2(D_SEQ, grouped_blocks, grouped_inputs, grouped_outputs);
+
+        for (std::size_t learner_idx = 0; learner_idx < learner_count; learner_idx++) {
+            delete[] grouped_outputs[learner_idx];
+            delete grouped_blocks[learner_idx];
+        }
+
+        return;
+    }
+
     if (learner_count == 4) {
         TransformerBlock* grouped_blocks[4] = {nullptr, nullptr, nullptr, nullptr};
         uint32_t* grouped_inputs[4] = {tensor_in, tensor_in, tensor_in, tensor_in};

@@ -28,12 +28,22 @@ public:
     ~SingleHeadSelfAttn();
 
     void compute(std::size_t seq_len, uint32_t* input, uint32_t* output);
+    static void computeGroup2(std::size_t seq_len,
+                              SingleHeadSelfAttn* heads[2],
+                              uint32_t* const inputs[2],
+                              uint32_t* const outputs[2]);
     static void computeGroup4(std::size_t seq_len,
                               SingleHeadSelfAttn* heads[4],
                               uint32_t* const inputs[4],
                               uint32_t* const outputs[4]);
 
 private:
+    template <std::size_t LearnerCount>
+    static void computeGroupImpl(std::size_t seq_len,
+                                 SingleHeadSelfAttn** heads,
+                                 uint32_t* const* inputs,
+                                 uint32_t* const* outputs);
+
     std::size_t head_idx_;
     std::size_t pre_seq_len_;
     std::size_t head_hidden_size_;

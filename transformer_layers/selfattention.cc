@@ -299,72 +299,60 @@ void SingleHeadSelfAttn::compute(std::size_t seq_len, uint32_t* input, uint32_t*
     softmax_->post_softmax(output, seq_len, head_hidden_size_);
 }
 
-// Grouped self-attention entry used by TransformerBlock::computeGroup4().
-// For Q/K/V projection we first try to fuse 4 learners into one interleaved
-// CodebookDense GEMM call. If that is not available, we fall back to 4 normal
-// per-learner Dense::compute() calls.
-void SingleHeadSelfAttn::computeGroup4(std::size_t seq_len,
-                                       SingleHeadSelfAttn* heads[4],
-                                       uint32_t* const inputs[4],
-                                       uint32_t* const outputs[4]) {
-    LinearLayer* query_layers[4] = {
-        heads[0]->query_layer_,
-        heads[1]->query_layer_,
-        heads[2]->query_layer_,
-        heads[3]->query_layer_,
-    };
-    LinearLayer* key_layers[4] = {
-        heads[0]->key_layer_,
-        heads[1]->key_layer_,
-        heads[2]->key_layer_,
-        heads[3]->key_layer_,
-    };
-    LinearLayer* value_layers[4] = {
-        heads[0]->value_layer_,
-        heads[1]->value_layer_,
-        heads[2]->value_layer_,
-        heads[3]->value_layer_,
+// Grouped self-attention entry used by TransformerBlock::computeGroup2/4().
+// For Q/K/V projection we first try to fuse learners into one interleaved
+// CodebookDense GEMM call. If that is not available, we fall back to normal
+// per-learner LinearLayer::compute() calls.
+template <std::size_t LearnerCount>
+void SingleHeadSelfAttn::computeGroupImpl(std::size_t seq_len,
+                                          SingleHeadSelfAttn** heads,
+                                          uint32_t* const* inputs,
+                                          uint32_t* const* outputs) {
+    static_assert(LearnerCount == 2u || LearnerCount == 4u,
+                  "Only 2- and 4-learner grouped self-attention is supported");
+
+    LinearLayer* query_layers[LearnerCount];
+    LinearLayer* key_layers[LearnerCount];
+    LinearLayer* value_layers[LearnerCount];
+    uint32_t* query_outputs[LearnerCount];
+    uint32_t* key_outputs[LearnerCount];
+    uint32_t* value_outputs[LearnerCount];
+
+    for (std::size_t learner = 0; learner < LearnerCount; learner++) {
+        query_layers[learner] = heads[learner]->query_layer_;
+        key_layers[learner] = heads[learner]->key_layer_;
+        value_layers[learner] = heads[learner]->value_layer_;
+        query_outputs[learner] = heads[learner]->query_layer_out_;
+        key_outputs[learner] = heads[learner]->key_layer_out_;
+        value_outputs[learner] = heads[learner]->value_layer_out_;
+    }
+
+    auto tryGroupedCodebookDense = [&](LinearLayer* const layers[LearnerCount],
+                                       uint32_t* const dense_outputs[LearnerCount]) {
+        if constexpr (LearnerCount == 2u) {
+            return tryComputeGroupedCodebookDense2(layers, seq_len, inputs, dense_outputs);
+        } else {
+            return tryComputeGroupedCodebookDense4(layers, seq_len, inputs, dense_outputs);
+        }
     };
 
-    uint32_t* query_outputs[4] = {
-        heads[0]->query_layer_out_,
-        heads[1]->query_layer_out_,
-        heads[2]->query_layer_out_,
-        heads[3]->query_layer_out_,
-    };
-    uint32_t* key_outputs[4] = {
-        heads[0]->key_layer_out_,
-        heads[1]->key_layer_out_,
-        heads[2]->key_layer_out_,
-        heads[3]->key_layer_out_,
-    };
-    uint32_t* value_outputs[4] = {
-        heads[0]->value_layer_out_,
-        heads[1]->value_layer_out_,
-        heads[2]->value_layer_out_,
-        heads[3]->value_layer_out_,
-    };
-
-    // Successful grouped dispatch here means CodebookDense::computeInterleaved4DDiffSeq()
-    // will be used, which is the point where the code eventually chooses between
-    // gemm_exec_compact_int_sve_interleaved_4D_diff_seq() and the scalar fallback.
-    if (!tryComputeGroupedCodebookDense4(query_layers, seq_len, inputs, query_outputs)) {
-        for (std::size_t learner = 0; learner < 4; learner++) {
+    if (!tryGroupedCodebookDense(query_layers, query_outputs)) {
+        for (std::size_t learner = 0; learner < LearnerCount; learner++) {
             heads[learner]->query_layer_->compute(seq_len, inputs[learner], query_outputs[learner]);
         }
     }
-    if (!tryComputeGroupedCodebookDense4(key_layers, seq_len, inputs, key_outputs)) {
-        for (std::size_t learner = 0; learner < 4; learner++) {
+    if (!tryGroupedCodebookDense(key_layers, key_outputs)) {
+        for (std::size_t learner = 0; learner < LearnerCount; learner++) {
             heads[learner]->key_layer_->compute(seq_len, inputs[learner], key_outputs[learner]);
         }
     }
-    if (!tryComputeGroupedCodebookDense4(value_layers, seq_len, inputs, value_outputs)) {
-        for (std::size_t learner = 0; learner < 4; learner++) {
+    if (!tryGroupedCodebookDense(value_layers, value_outputs)) {
+        for (std::size_t learner = 0; learner < LearnerCount; learner++) {
             heads[learner]->value_layer_->compute(seq_len, inputs[learner], value_outputs[learner]);
         }
     }
 
-    for (std::size_t learner = 0; learner < 4; learner++) {
+    for (std::size_t learner = 0; learner < LearnerCount; learner++) {
         SingleHeadSelfAttn* self = heads[learner];
 
         dumpPackedMatrixIfEnabled(
@@ -479,4 +467,18 @@ void SingleHeadSelfAttn::computeGroup4(std::size_t seq_len,
 
         self->softmax_->post_softmax(outputs[learner], seq_len, self->head_hidden_size_);
     }
+}
+
+void SingleHeadSelfAttn::computeGroup2(std::size_t seq_len,
+                                       SingleHeadSelfAttn* heads[2],
+                                       uint32_t* const inputs[2],
+                                       uint32_t* const outputs[2]) {
+    computeGroupImpl<2u>(seq_len, heads, inputs, outputs);
+}
+
+void SingleHeadSelfAttn::computeGroup4(std::size_t seq_len,
+                                       SingleHeadSelfAttn* heads[4],
+                                       uint32_t* const inputs[4],
+                                       uint32_t* const outputs[4]) {
+    computeGroupImpl<4u>(seq_len, heads, inputs, outputs);
 }

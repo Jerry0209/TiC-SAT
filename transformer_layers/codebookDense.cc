@@ -323,19 +323,20 @@ void CodebookDense::runCompactGemm(std::size_t seq_len, const uint32_t *input, u
 }
 
 void CodebookDense::buildInterleavedCachesIfNeeded() {
-    if (n_learners_ != 4u) {
+    if (n_learners_ != 2u && n_learners_ != 4u) {
         return;
     }
 
+    const std::size_t learner_count = n_learners_;
     const std::size_t packed_idx_count = output_size_ * n_words_row_;
     if (weight_idx_interleaved_ == nullptr) {
-        weight_idx_interleaved_cache_.resize(packed_idx_count * 4u);
+        weight_idx_interleaved_cache_.resize(packed_idx_count * learner_count);
         for (std::size_t idx = 0; idx < packed_idx_count; idx++) {
-            for (std::size_t learner = 0; learner < 4u; learner++) {
+            for (std::size_t learner = 0; learner < learner_count; learner++) {
                 if (same_seq_ || weight_idx_by_learner_ == nullptr) {
-                    weight_idx_interleaved_cache_[idx * 4u + learner] = weight_idx_[idx];
+                    weight_idx_interleaved_cache_[idx * learner_count + learner] = weight_idx_[idx];
                 } else {
-                    weight_idx_interleaved_cache_[idx * 4u + learner] =
+                    weight_idx_interleaved_cache_[idx * learner_count + learner] =
                         weight_idx_by_learner_[learner * packed_idx_count + idx];
                 }
             }
@@ -345,15 +346,15 @@ void CodebookDense::buildInterleavedCachesIfNeeded() {
 
     const std::size_t codebook_size = static_cast<std::size_t>(1u) << bits_per_cb_;
     if (codebook_interleaved_q_.empty()) {
-        codebook_interleaved_q_.resize(codebook_size * 4u);
+        codebook_interleaved_q_.resize(codebook_size * learner_count);
         for (std::size_t cb_idx = 0; cb_idx < codebook_size; cb_idx++) {
-            for (std::size_t learner = 0; learner < 4u; learner++) {
+            for (std::size_t learner = 0; learner < learner_count; learner++) {
                 const std::size_t src_base =
-                    (!codebooks_q_.empty() && codebooks_q_.size() >= (4u * codebook_size))
+                    (!codebooks_q_.empty() && codebooks_q_.size() >= (learner_count * codebook_size))
                         ? (learner * codebook_size)
                         : 0u;
-                codebook_interleaved_q_[cb_idx * 4u + learner] =
-                    (!codebooks_q_.empty() && codebooks_q_.size() >= (4u * codebook_size))
+                codebook_interleaved_q_[cb_idx * learner_count + learner] =
+                    (!codebooks_q_.empty() && codebooks_q_.size() >= (learner_count * codebook_size))
                         ? codebooks_q_[src_base + cb_idx]
                         : codebook_q_[cb_idx];
             }
@@ -361,14 +362,22 @@ void CodebookDense::buildInterleavedCachesIfNeeded() {
     }
 
     if (bias_interleaved_q_.empty() && !biases_q_.empty()) {
-        bias_interleaved_q_.resize(output_size_ * 4u);
+        bias_interleaved_q_.resize(output_size_ * learner_count);
         for (std::size_t out_idx = 0; out_idx < output_size_; out_idx++) {
-            for (std::size_t learner = 0; learner < 4u; learner++) {
-                bias_interleaved_q_[out_idx * 4u + learner] =
+            for (std::size_t learner = 0; learner < learner_count; learner++) {
+                bias_interleaved_q_[out_idx * learner_count + learner] =
                     biases_q_[learner * output_size_ + out_idx];
             }
         }
     }
+}
+
+bool CodebookDense::supportsInterleaved2DSameSeq() const {
+    if ((n_learners_ != 2u) || !same_seq_ || codebook_interleaved_q_.empty()) {
+        return false;
+    }
+
+    return weight_idx_ != nullptr;
 }
 
 bool CodebookDense::supportsInterleaved4DDiffSeq() const {
@@ -377,6 +386,70 @@ bool CodebookDense::supportsInterleaved4DDiffSeq() const {
     }
 
     return same_seq_ ? (weight_idx_ != nullptr) : (weight_idx_interleaved_ != nullptr);
+}
+
+// Execute 2 learners together when all learners share the same packed index
+// stream. This is the 2D companion to the 4D grouped path below.
+void CodebookDense::computeInterleaved2DSameSeq(std::size_t seq_len,
+                                                uint32_t* const inputs[2],
+                                                uint32_t* const outputs[2]) const {
+    if (!supportsInterleaved2DSameSeq()) {
+        throw std::runtime_error("CodebookDense interleaved 2D same-seq path is not available");
+    }
+
+    std::vector<int8_t> input_interleaved(seq_len * input_size_ * 2u, 0);
+    for (std::size_t seq = 0; seq < seq_len; seq++) {
+        for (std::size_t in_idx = 0; in_idx < input_size_; in_idx++) {
+            for (std::size_t learner = 0; learner < 2u; learner++) {
+                input_interleaved[((seq * input_size_) + in_idx) * 2u + learner] =
+                    unpackInt8(inputs[learner] + seq * (input_size_ / 4u), in_idx);
+            }
+        }
+    }
+
+    std::vector<int32_t> output_acc_interleaved(seq_len * output_size_ * 2u, 0);
+
+    gemm_t layer;
+    layer.seq_len = static_cast<uint16_t>(seq_len);
+    layer.input_size = static_cast<uint16_t>(input_size_);
+    layer.output_size = static_cast<uint16_t>(output_size_);
+    layer.n_words_row = static_cast<uint16_t>(n_words_row_);
+
+#ifdef SIMD
+    gemm_exec_compact_int_sve_interleaved_2D_same_seq(
+        layer,
+        input_interleaved.data(),
+        weight_idx_,
+        codebook_interleaved_q_.data(),
+        bias_interleaved_q_.empty() ? nullptr : bias_interleaved_q_.data(),
+        output_acc_interleaved.data(),
+        bits_per_cb_);
+#else
+    gemm_exec_compact_int_interleaved_2D_same_seq(
+        layer,
+        input_interleaved.data(),
+        weight_idx_,
+        codebook_interleaved_q_.data(),
+        bias_interleaved_q_.empty() ? nullptr : bias_interleaved_q_.data(),
+        output_acc_interleaved.data(),
+        bits_per_cb_);
+#endif
+
+    std::vector<int8_t> output_int8(seq_len * output_size_ * 2u, 0);
+    for (std::size_t idx = 0; idx < output_acc_interleaved.size(); idx++) {
+        output_int8[idx] = static_cast<int8_t>(output_acc_interleaved[idx]);
+    }
+
+    std::vector<int8_t> learner_output(seq_len * output_size_, 0);
+    for (std::size_t learner = 0; learner < 2u; learner++) {
+        for (std::size_t seq = 0; seq < seq_len; seq++) {
+            for (std::size_t out_idx = 0; out_idx < output_size_; out_idx++) {
+                learner_output[seq * output_size_ + out_idx] =
+                    output_int8[((seq * output_size_) + out_idx) * 2u + learner];
+            }
+        }
+        packInt8(learner_output, outputs[learner]);
+    }
 }
 
 // Execute 4 learners together using the shared interleaved layout:

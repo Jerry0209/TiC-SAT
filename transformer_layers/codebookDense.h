@@ -34,6 +34,10 @@ public:
     ~CodebookDense() override = default;
 
     void compute(std::size_t seq_len, uint32_t *input, uint32_t *output) override;
+    bool supportsInterleaved2DSameSeq() const;
+    void computeInterleaved2DSameSeq(std::size_t seq_len,
+                                     uint32_t* const inputs[2],
+                                     uint32_t* const outputs[2]) const;
     bool supportsInterleaved4DDiffSeq() const;
     void computeInterleaved4DDiffSeq(std::size_t seq_len,
                                      uint32_t* const inputs[4],

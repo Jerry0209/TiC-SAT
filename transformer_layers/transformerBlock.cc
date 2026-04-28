@@ -343,33 +343,37 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* o
     runM5IfAvailable("m5 dumpresetstats");
 }
 
-void TransformerBlock::computeGroup4(std::size_t seq_len,
-                                     TransformerBlock* blocks[4],
-                                     uint32_t* const inputs[4],
-                                     uint32_t* const outputs[4]) {
+template <std::size_t LearnerCount>
+void TransformerBlock::computeGroupImpl(std::size_t seq_len,
+                                        TransformerBlock** blocks,
+                                        uint32_t* const* inputs,
+                                        uint32_t* const* outputs) {
+    static_assert(LearnerCount == 2u || LearnerCount == 4u,
+                  "Only 2- and 4-learner grouped transformer execution is supported");
+
     runM5IfAvailable("m5 resetstats");
 
     for (std::size_t n = 0; n < blocks[0]->num_heads_; ++n) {
         std::cout << "Head : " << n << std::endl;
 
-        SingleHeadSelfAttn* heads[4] = {
-            blocks[0]->selfatten_[n],
-            blocks[1]->selfatten_[n],
-            blocks[2]->selfatten_[n],
-            blocks[3]->selfatten_[n],
-        };
-        uint32_t* head_outputs[4] = {
-            blocks[0]->multihead_out + n * ((seq_len * blocks[0]->head_hidden_size_) >> 2),
-            blocks[1]->multihead_out + n * ((seq_len * blocks[1]->head_hidden_size_) >> 2),
-            blocks[2]->multihead_out + n * ((seq_len * blocks[2]->head_hidden_size_) >> 2),
-            blocks[3]->multihead_out + n * ((seq_len * blocks[3]->head_hidden_size_) >> 2),
-        };
+        SingleHeadSelfAttn* heads[LearnerCount];
+        uint32_t* head_outputs[LearnerCount];
+        for (std::size_t learner = 0; learner < LearnerCount; learner++) {
+            heads[learner] = blocks[learner]->selfatten_[n];
+            head_outputs[learner] =
+                blocks[learner]->multihead_out +
+                n * ((seq_len * blocks[learner]->head_hidden_size_) >> 2);
+        }
 
-        SingleHeadSelfAttn::computeGroup4(seq_len, heads, inputs, head_outputs);
+        if constexpr (LearnerCount == 2u) {
+            SingleHeadSelfAttn::computeGroup2(seq_len, heads, inputs, head_outputs);
+        } else {
+            SingleHeadSelfAttn::computeGroup4(seq_len, heads, inputs, head_outputs);
+        }
     }
 
-    uint32_t* multihead_for_condense[4] = {nullptr, nullptr, nullptr, nullptr};
-    for (std::size_t learner = 0; learner < 4; learner++) {
+    uint32_t* multihead_for_condense[LearnerCount] = {};
+    for (std::size_t learner = 0; learner < LearnerCount; learner++) {
 #ifndef BWMA
         Transpose::multihead_transpose(
             blocks[learner]->multihead_out,
@@ -392,26 +396,31 @@ void TransformerBlock::computeGroup4(std::size_t seq_len,
     }
 
     std::cout << "Condense" << std::endl;
-    LinearLayer* condense_layers[4] = {
-        blocks[0]->condense,
-        blocks[1]->condense,
-        blocks[2]->condense,
-        blocks[3]->condense,
+    LinearLayer* condense_layers[LearnerCount];
+    uint32_t* condense_outputs[LearnerCount];
+    for (std::size_t learner = 0; learner < LearnerCount; learner++) {
+        condense_layers[learner] = blocks[learner]->condense;
+        condense_outputs[learner] = blocks[learner]->condense_out;
+    }
+
+    auto tryGroupedCodebookDense = [&](LinearLayer* const layers[LearnerCount],
+                                       uint32_t* const dense_inputs[LearnerCount],
+                                       uint32_t* const dense_outputs[LearnerCount]) {
+        if constexpr (LearnerCount == 2u) {
+            return tryComputeGroupedCodebookDense2(layers, seq_len, dense_inputs, dense_outputs);
+        } else {
+            return tryComputeGroupedCodebookDense4(layers, seq_len, dense_inputs, dense_outputs);
+        }
     };
-    uint32_t* condense_outputs[4] = {
-        blocks[0]->condense_out,
-        blocks[1]->condense_out,
-        blocks[2]->condense_out,
-        blocks[3]->condense_out,
-    };
-    if (!tryComputeGroupedCodebookDense4(condense_layers, seq_len, multihead_for_condense, condense_outputs)) {
-        for (std::size_t learner = 0; learner < 4; learner++) {
+
+    if (!tryGroupedCodebookDense(condense_layers, multihead_for_condense, condense_outputs)) {
+        for (std::size_t learner = 0; learner < LearnerCount; learner++) {
             blocks[learner]->condense->compute(
                 seq_len, multihead_for_condense[learner], blocks[learner]->condense_out);
         }
     }
 
-    for (std::size_t learner = 0; learner < 4; learner++) {
+    for (std::size_t learner = 0; learner < LearnerCount; learner++) {
         dumpPackedMatrixIfEnabled(
             blocks[learner]->dump_dir_,
             "condense_out.txt",
@@ -441,7 +450,7 @@ void TransformerBlock::computeGroup4(std::size_t seq_len,
     }
 
     std::cout << "Add Norm" << std::endl;
-    for (std::size_t learner = 0; learner < 4; learner++) {
+    for (std::size_t learner = 0; learner < LearnerCount; learner++) {
 #ifdef BWMA
         blocks[learner]->addNorm->computeRearranged(inputs[learner], blocks[learner]->condense_out);
 #else
@@ -478,32 +487,22 @@ void TransformerBlock::computeGroup4(std::size_t seq_len,
     runM5IfAvailable("m5 dumpresetstats");
 
     std::cout << "Feed Forward 0" << std::endl;
-    LinearLayer* ff0_layers[4] = {
-        blocks[0]->feedForward0,
-        blocks[1]->feedForward0,
-        blocks[2]->feedForward0,
-        blocks[3]->feedForward0,
-    };
-    uint32_t* ff0_outputs[4] = {
-        blocks[0]->intermediateFF,
-        blocks[1]->intermediateFF,
-        blocks[2]->intermediateFF,
-        blocks[3]->intermediateFF,
-    };
-    uint32_t* ff0_inputs[4] = {
-        blocks[0]->condense_out,
-        blocks[1]->condense_out,
-        blocks[2]->condense_out,
-        blocks[3]->condense_out,
-    };
-    if (!tryComputeGroupedCodebookDense4(ff0_layers, seq_len, ff0_inputs, ff0_outputs)) {
-        for (std::size_t learner = 0; learner < 4; learner++) {
+    LinearLayer* ff0_layers[LearnerCount];
+    uint32_t* ff0_outputs[LearnerCount];
+    uint32_t* ff0_inputs[LearnerCount];
+    for (std::size_t learner = 0; learner < LearnerCount; learner++) {
+        ff0_layers[learner] = blocks[learner]->feedForward0;
+        ff0_outputs[learner] = blocks[learner]->intermediateFF;
+        ff0_inputs[learner] = blocks[learner]->condense_out;
+    }
+    if (!tryGroupedCodebookDense(ff0_layers, ff0_inputs, ff0_outputs)) {
+        for (std::size_t learner = 0; learner < LearnerCount; learner++) {
             blocks[learner]->feedForward0->compute(
                 seq_len, blocks[learner]->condense_out, blocks[learner]->intermediateFF);
         }
     }
 
-    for (std::size_t learner = 0; learner < 4; learner++) {
+    for (std::size_t learner = 0; learner < LearnerCount; learner++) {
         const std::string ff0_label =
             "ffn0_learner" + std::to_string(blocks[learner]->learner_idx_);
 
@@ -536,26 +535,20 @@ void TransformerBlock::computeGroup4(std::size_t seq_len,
     }
 
     std::cout << "Feed Forward 1" << std::endl;
-    LinearLayer* ff1_layers[4] = {
-        blocks[0]->feedForward1,
-        blocks[1]->feedForward1,
-        blocks[2]->feedForward1,
-        blocks[3]->feedForward1,
-    };
-    uint32_t* ff1_inputs[4] = {
-        blocks[0]->intermediateFF,
-        blocks[1]->intermediateFF,
-        blocks[2]->intermediateFF,
-        blocks[3]->intermediateFF,
-    };
-    if (!tryComputeGroupedCodebookDense4(ff1_layers, seq_len, ff1_inputs, outputs)) {
-        for (std::size_t learner = 0; learner < 4; learner++) {
+    LinearLayer* ff1_layers[LearnerCount];
+    uint32_t* ff1_inputs[LearnerCount];
+    for (std::size_t learner = 0; learner < LearnerCount; learner++) {
+        ff1_layers[learner] = blocks[learner]->feedForward1;
+        ff1_inputs[learner] = blocks[learner]->intermediateFF;
+    }
+    if (!tryGroupedCodebookDense(ff1_layers, ff1_inputs, outputs)) {
+        for (std::size_t learner = 0; learner < LearnerCount; learner++) {
             blocks[learner]->feedForward1->compute(
                 seq_len, blocks[learner]->intermediateFF, outputs[learner]);
         }
     }
 
-    for (std::size_t learner = 0; learner < 4; learner++) {
+    for (std::size_t learner = 0; learner < LearnerCount; learner++) {
         const std::string ff1_label =
             "ffn1_pre_addnorm_learner" + std::to_string(blocks[learner]->learner_idx_);
 
@@ -592,7 +585,7 @@ void TransformerBlock::computeGroup4(std::size_t seq_len,
     }
 
     std::cout << "Add Norm" << std::endl;
-    for (std::size_t learner = 0; learner < 4; learner++) {
+    for (std::size_t learner = 0; learner < LearnerCount; learner++) {
 #ifdef BWMA
         blocks[learner]->addNorm->computeRearranged(blocks[learner]->condense_out, outputs[learner]);
 #else
@@ -627,4 +620,18 @@ void TransformerBlock::computeGroup4(std::size_t seq_len,
     }
 
     runM5IfAvailable("m5 dumpresetstats");
+}
+
+void TransformerBlock::computeGroup2(std::size_t seq_len,
+                                     TransformerBlock* blocks[2],
+                                     uint32_t* const inputs[2],
+                                     uint32_t* const outputs[2]) {
+    computeGroupImpl<2u>(seq_len, blocks, inputs, outputs);
+}
+
+void TransformerBlock::computeGroup4(std::size_t seq_len,
+                                     TransformerBlock* blocks[4],
+                                     uint32_t* const inputs[4],
+                                     uint32_t* const outputs[4]) {
+    computeGroupImpl<4u>(seq_len, blocks, inputs, outputs);
 }

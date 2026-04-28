@@ -1,7 +1,7 @@
 #ifndef _CODEBOOKS_DEF_H_
 #define _CODEBOOKS_DEF_H_
 
-#define N_LEARNERS      4
+#define N_LEARNERS      1
 
 #define N_SVE_LANES     4
 #define N_SVE_HALF      8

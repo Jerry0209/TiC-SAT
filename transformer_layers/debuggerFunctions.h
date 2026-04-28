@@ -51,6 +51,11 @@ bool tryComputeGroupedCodebookDense4(LinearLayer* const layers[4],
                                      uint32_t* const inputs[4],
                                      uint32_t* const outputs[4]);
 
+bool tryComputeGroupedCodebookDense2(LinearLayer* const layers[2],
+                                     std::size_t seq_len,
+                                     uint32_t* const inputs[2],
+                                     uint32_t* const outputs[2]);
+
 void printPackedPreview(const char *label,
                         const uint32_t *buffer,
                         std::size_t packed_size);
