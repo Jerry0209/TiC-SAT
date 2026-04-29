@@ -2662,12 +2662,25 @@ void sve_vect_mul_compact_non_tiled_out_l1l2(const uint32_t *vect_idxs, uint32_t
 
 
 
-void sve_vect_mul_compact_interleaved2D_non_tiled_out_l1l2(const uint32_t *vect_idxs, uint32_t vect_size, uint32_t n_vect_elems, float *mat, uint32_t tile_l1_h, uint32_t tile_l1_w, uint32_t tile_l2_w, uint32_t full_out_w, const float *codebook_interl, tensor3D_t *res, uint32_t out_index, int base_res_idx){
+void sve_vect_mul_compact_interleaved2D_non_tiled_out_l1l2(
+    const uint32_t *vect_idxs, // packed indexes for the current tile (already filtered for the tile dimensions)
+    uint32_t vect_size, // packed indexes vector size (number of 32-bits words with packed indexes)
+    uint32_t n_vect_elems, // input vector length (K dimension)
+    float *mat, // activation matrix
+    uint32_t tile_l1_h, 
+    uint32_t tile_l1_w, 
+    uint32_t tile_l2_w, 
+    uint32_t full_out_w, // full output width (to compute the correct output indexes based on the tile position)
+    const float *codebook_interl, // interleaved codebooks (already filtered for the tile dimensions)
+    tensor3D_t *res, // output tensor
+    uint32_t out_index, // not used
+    int base_res_idx // the position of the first element of the output tile within the output tensor (used to compute the correct output indexes based on the tile position)
+){
 
     uint8_t interl_factor_2D = 2;
 
     // Vect register to store the SIMD intermediate results of a row
-    svfloat32_t row_res_vect0 = svdup_n_f32(0.0f);
+    svfloat32_t row_res_vect0 = svdup_n_f32(0.0f); // Duplicate all the lanes with 0.0f
     svfloat32_t row_res_vect1 = svdup_n_f32(0.0f);
     
     uint32_t missing_total = 0;       // How many indexes are missing to be processed
@@ -2681,7 +2694,7 @@ void sve_vect_mul_compact_interleaved2D_non_tiled_out_l1l2(const uint32_t *vect_
 
     svbool_t bits_mask_pg;      // Predicate for producing the shifted masks to unpack the indexes
     svuint32_t shamts;          // Shift amounts for the masks
-    svuint32_t base_masks = svdup_u32(IDX_MASK); 
+    svuint32_t base_masks = svdup_u32(IDX_MASK); // Duplicate the index mask for all lanes (#define IDX_MASK		a0b111)
 
     svuint32_t dup_idxs_pakd;   // Holds duplicated instances of a packed-indexes word (to be masked with different masks)
     svuint32_t unpkd_idxs;      // Holds the unpacked indexes (one per lane)
@@ -2693,16 +2706,18 @@ void sve_vect_mul_compact_interleaved2D_non_tiled_out_l1l2(const uint32_t *vect_
 
 
     #if defined(N_SVE_REG_CB_1)
-    svfloat32x2_t codebooks_loaded = svld2_f32(svwhilelt_b32(0, CB_SIZE), codebook_interl);
-    svfloat32_t cb0 = svget2_f32(codebooks_loaded, 0);
+    svfloat32x2_t codebooks_loaded = svld2_f32(svwhilelt_b32(0, CB_SIZE), codebook_interl); // Load the interleaved codebooks
+    svfloat32_t cb0 = svget2_f32(codebooks_loaded, 0); // Get two codebooks
     svfloat32_t cb1 = svget2_f32(codebooks_loaded, 1);
 
     #elif defined(N_SVE_REG_CB_2)
     svfloat32x2_t codebooks_loaded = svld2_f32(svwhilelt_b32(0, CB_SIZE), &codebook_interl[0]);
-    svfloat32x2_t cb0_2regs = svcreate2_f32(svget2_f32(codebooks_loaded, 0), svdup_n_f32(0.0));
-    svfloat32x2_t cb1_2regs = svcreate2_f32(svget2_f32(codebooks_loaded, 1), svdup_n_f32(0.0));
+    svfloat32x2_t cb0_2regs = svcreate2_f32(svget2_f32(codebooks_loaded, 0), svdup_n_f32(0.0)); // Get the first part of the first codebook
+    svfloat32x2_t cb1_2regs = svcreate2_f32(svget2_f32(codebooks_loaded, 1), svdup_n_f32(0.0)); // Get the first part of the second codebook
+    // cb0_2regs = { cb0_part0, cb0_part1 };
+    // cb1_2regs = { cb1_part0, cb1_part1 };
 
-    codebooks_loaded = svld2_f32(svwhilelt_b32(0, CB_SIZE), &codebook_interl[(N_SVE_LANES*4)]);
+    codebooks_loaded = svld2_f32(svwhilelt_b32(0, CB_SIZE), &codebook_interl[(N_SVE_LANES*4)]); // N_SVE_LANES is the number of float32 lanes
     cb0_2regs = svcreate2_f32(svget2_f32(cb0_2regs, 0), svget2_f32(codebooks_loaded, 0));
     cb1_2regs = svcreate2_f32(svget2_f32(cb1_2regs, 0), svget2_f32(codebooks_loaded, 1));
 
@@ -2744,7 +2759,8 @@ void sve_vect_mul_compact_interleaved2D_non_tiled_out_l1l2(const uint32_t *vect_
                 load_pg = svwhilelt_b32(cw, vect_size);
 
                 // Load a 32-bits word with IDXS_PER_WORD packed indexes
-                packed_idxs = svld1_u32(load_pg, &vect_idxs[cw]);
+                packed_idxs = svld1_u32(load_pg, &vect_idxs[cw]); // load into N_SVE_LANES lanes the packed indexes
+                // uint32 word: [index7][index6][index5][index4][index3][index2][index1][index0]
                 // print_vect_ui32(packed_idxs);
 
                 // Counts how many lanes have been loaded
@@ -2798,7 +2814,7 @@ void sve_vect_mul_compact_interleaved2D_non_tiled_out_l1l2(const uint32_t *vect_
                         #endif
 
                         #ifdef N_SVE_REG_CB_2
-                        weights_0 = extract_weightsx2(bits_mask_pg, unpkd_idxs, cb0_2regs);
+                        weights_0 = extract_weightsx2(bits_mask_pg, unpkd_idxs, cb0_2regs); // use the same indexes
                         weights_1 = extract_weightsx2(bits_mask_pg, unpkd_idxs, cb1_2regs);
                         #endif
 

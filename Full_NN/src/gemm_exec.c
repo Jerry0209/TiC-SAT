@@ -4,6 +4,7 @@
 
 #include <gemm_exec.h>
 #ifdef SIMD
+#include <codebooks_def.h>
 #include <gemm_SVE.h>
 #endif
 
@@ -31,6 +32,25 @@ static uint32_t get_packed_index_interleaved_4d(
 
     return (packed_word >> offset) & idx_mask;
 }
+
+#ifdef SIMD
+static uint32_t gemm_sve_codebook_capacity(void) {
+#if defined(N_SVE_REG_CB_4)
+    return N_SVE_LANES * 4u; // Four SVE registers are available for each learner codebook.
+#elif defined(N_SVE_REG_CB_2)
+    return N_SVE_LANES * 2u; // Two SVE registers are available for each learner codebook.
+#elif defined(N_SVE_REG_CB_1)
+    return N_SVE_LANES; // One SVE register is available for each learner codebook.
+#else
+    return 0u; // No Mentor-style codebook register mode was selected.
+#endif
+}
+
+static int gemm_sve_codebook_fits_registers(uint32_t codebook_size) {
+    const uint32_t capacity = gemm_sve_codebook_capacity(); // Match the same N_SVE_REG_CB_* policy used by the SVE row kernels.
+    return (capacity != 0u) && (codebook_size <= capacity); // Fall back when the codebook cannot be fully cached in SVE registers.
+}
+#endif
 
 void gemm_exec_noCB(gemm_t gemm_layer,
                     const float *in,
@@ -398,12 +418,23 @@ void gemm_exec_compact_int_sve_interleaved_4D_diff_seq(
         return;
     }
 
-    int32_t codebooks_i32[4u * 256u] = {0};
     const uint32_t codebook_size = 1u << bits_per_cb;
+    if (!gemm_sve_codebook_fits_registers(codebook_size)) {
+        gemm_exec_compact_int_interleaved_4D_diff_seq(gemm_layer,
+                                                      in_interleaved,
+                                                      weight_idx_interleaved,
+                                                      codebook_interleaved,
+                                                      bias_interleaved,
+                                                      out_interleaved,
+                                                      bits_per_cb);
+        return;
+    }
+
+    int32_t codebook_i32_interleaved[4u * 256u] = {0};
     for (uint32_t cb_idx = 0; cb_idx < codebook_size; cb_idx++) {
         for (uint32_t learner = 0; learner < 4u; learner++) {
-            codebooks_i32[learner * 256u + cb_idx] =
-                (int32_t)codebook_interleaved[cb_idx * 4u + learner];
+            codebook_i32_interleaved[cb_idx * 4u + learner] =
+                (int32_t)codebook_interleaved[cb_idx * 4u + learner]; // Preserve [codebook index][learner] layout for svld4_s32.
         }
     }
 
@@ -461,8 +492,8 @@ void gemm_exec_compact_int_sve_interleaved_4D_diff_seq(
                     &input_i32_interleaved[((seq0 * gemm_layer.input_size) + processed_k) * 4u],
                     seq_tile,
                     gemm_layer.input_size * 4u,
-                    codebooks_i32,
-                    256u,
+                    codebook_i32_interleaved,
+                    codebook_size,
                     &out_interleaved[(seq0 * gemm_layer.output_size) * 4u],
                     out_idx,
                     gemm_layer.output_size * 4u,
@@ -526,12 +557,23 @@ void gemm_exec_compact_int_sve_interleaved_2D_same_seq(
         return;
     }
 
-    int32_t codebooks_i32[2u * 256u] = {0};
     const uint32_t codebook_size = 1u << bits_per_cb;
+    if (!gemm_sve_codebook_fits_registers(codebook_size)) {
+        gemm_exec_compact_int_interleaved_2D_same_seq(gemm_layer,
+                                                      in_interleaved,
+                                                      weight_idx,
+                                                      codebook_interleaved,
+                                                      bias_interleaved,
+                                                      out_interleaved,
+                                                      bits_per_cb);
+        return;
+    }
+
+    int32_t codebook_i32_interleaved[2u * 256u] = {0};
     for (uint32_t cb_idx = 0; cb_idx < codebook_size; cb_idx++) {
         for (uint32_t learner = 0; learner < 2u; learner++) {
-            codebooks_i32[learner * 256u + cb_idx] =
-                (int32_t)codebook_interleaved[cb_idx * 2u + learner];
+            codebook_i32_interleaved[cb_idx * 2u + learner] =
+                (int32_t)codebook_interleaved[cb_idx * 2u + learner]; // Preserve [codebook index][learner] layout for svld2_s32.
         }
     }
 
@@ -589,8 +631,8 @@ void gemm_exec_compact_int_sve_interleaved_2D_same_seq(
                     &input_i32_interleaved[((seq0 * gemm_layer.input_size) + processed_k) * 2u],
                     seq_tile,
                     gemm_layer.input_size * 2u,
-                    codebooks_i32,
-                    256u,
+                    codebook_i32_interleaved,
+                    codebook_size,
                     &out_interleaved[(seq0 * gemm_layer.output_size) * 2u],
                     out_idx,
                     gemm_layer.output_size * 2u,
@@ -658,12 +700,23 @@ void gemm_exec_compact_int_sve_interleaved_4D_same_seq(
         return;
     }
 
-    int32_t codebooks_i32[4u * 256u] = {0};
     const uint32_t codebook_size = 1u << bits_per_cb;
+    if (!gemm_sve_codebook_fits_registers(codebook_size)) {
+        gemm_exec_compact_int_interleaved_4D_same_seq(gemm_layer,
+                                                      in_interleaved,
+                                                      weight_idx,
+                                                      codebook_interleaved,
+                                                      bias_interleaved,
+                                                      out_interleaved,
+                                                      bits_per_cb);
+        return;
+    }
+
+    int32_t codebook_i32_interleaved[4u * 256u] = {0};
     for (uint32_t cb_idx = 0; cb_idx < codebook_size; cb_idx++) {
         for (uint32_t learner = 0; learner < 4u; learner++) {
-            codebooks_i32[learner * 256u + cb_idx] =
-                (int32_t)codebook_interleaved[cb_idx * 4u + learner];
+            codebook_i32_interleaved[cb_idx * 4u + learner] =
+                (int32_t)codebook_interleaved[cb_idx * 4u + learner]; // Preserve [codebook index][learner] layout for svld4_s32.
         }
     }
 
@@ -721,8 +774,8 @@ void gemm_exec_compact_int_sve_interleaved_4D_same_seq(
                     &input_i32_interleaved[((seq0 * gemm_layer.input_size) + processed_k) * 4u],
                     seq_tile,
                     gemm_layer.input_size * 4u,
-                    codebooks_i32,
-                    256u,
+                    codebook_i32_interleaved,
+                    codebook_size,
                     &out_interleaved[(seq0 * gemm_layer.output_size) * 4u],
                     out_idx,
                     gemm_layer.output_size * 4u,
