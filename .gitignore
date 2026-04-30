@@ -31,4 +31,5 @@ gem5-X-TiCSAT/system/arm/aarch64_bootloader/boot_emm.arm64
 data*
 taskflow
 gem5.pem
-
+/weights/
+/Full_NN/gemm_definitions/
