@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "transformer_layers/run_mode_config.h"
+#include <codebooks_def.h>
 #if CFG_USE_CODEBOOK_GEMM
 #include "transformer_layers/registry_adapter.h"
 #endif
@@ -129,11 +130,19 @@ void test() {
     std::cout << "SA_SIZE = " << SA_SIZE << std::endl;
     std::cout << "KERNEL_DIM = " << KERNEL_DIM << std::endl;
     std::cout << "MAX_COL = " << MAX_COL << std::endl;
+    std::cout << "SVE_LENGTH = " << (N_SVE_BYTE * 8) << " bits" << std::endl;
+
     std::cout << "D_Q = " << D_Q << std::endl;
     std::cout << "D_SEQ = " << D_SEQ << std::endl;
     std::cout << "D_MODEL = " << D_MODEL << std::endl;
     std::cout << "NUM_HEAD = " << NUM_HEAD << std::endl;
     std::cout << "D_FF = " << D_FF << std::endl;
+
+    std::cout << "N_LEARNERS = " << N_LEARNERS << std::endl;
+    std::cout << "CODEBOOK_SIZE = " << CB_SIZE << std::endl;
+    std::cout << "TILE_SIZE = " << TILE_SIZE << std::endl;
+    std::cout << "USE_F32 = " << USE_F32 << std::endl;
+
     std::cout << "CFG_RELOAD_WEIGHT = " << CFG_RELOAD_WEIGHT << std::endl;
     std::cout << "CFG_USE_NOTEBOOK_GENERATED_WEIGHTS = " << CFG_USE_NOTEBOOK_GENERATED_WEIGHTS << std::endl;
     std::cout << "CFG_USE_CODEBOOK_GEMM = " << CFG_USE_CODEBOOK_GEMM << std::endl;
@@ -141,6 +150,13 @@ void test() {
     std::cout << "CFG_ENABLE_DEBUG_PRINT = " << CFG_ENABLE_DEBUG_PRINT << std::endl;
     std::cout << "CFG_PROFILE_GEMM_ONLY = " << CFG_PROFILE_GEMM_ONLY << std::endl;
     std::cout << "CFG_SIMD = " << CFG_SIMD << std::endl;
+    
+    
+// #ifdef USE_F32
+//     std::cout << "USE_F32 = " << USE_F32 << std::endl;
+// #else
+//     std::cout << "USE_F32 = 0" << std::endl;
+// #endif
 
     // Prefer the host-side project path and fall back to the 9p mount in gem5.
     std::string dir_name = "/home/thu/TiC-SAT/weights";
