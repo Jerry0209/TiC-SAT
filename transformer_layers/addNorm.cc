@@ -26,7 +26,8 @@ void AddNormalize::compute(uint32_t *input, uint32_t *output) {
         }
 
         output_ptr = (int8_t*) (output + i * (input_dim_ >> 2));
-        auto mean = (int32_t) (sum / input_dim_);
+        // auto mean = (int32_t) (sum / input_dim_);
+        auto mean = (int32_t) (sum / static_cast<int32_t>(input_dim_));
         int32_t variance = 0;
         for (int j=0; j< input_dim_; j++){
             // variance+= (*output_ptr++ - mean) ^ 2; // Assuming that the values are fixed-point with 2 digit of fraction.
@@ -89,7 +90,8 @@ void AddNormalize::computeRearranged(uint32_t *input, uint32_t *output) {
             output_ptr += seq_len_* kernel_dim_;
         }
 
-        auto mean = (int32_t) (sum / input_dim_);
+        // auto mean = (int32_t) (sum / input_dim_);
+        auto mean = (int32_t) (sum / static_cast<int32_t>(input_dim_));
         int32_t variance = 0;
         output_ptr = (int8_t*) output + i*kernel_dim_;
         for (int j =0; j< input_dim_ / kernel_dim_; j++){
