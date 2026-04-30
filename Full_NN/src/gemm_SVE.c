@@ -10,6 +10,20 @@ static uint32_t gemm_sve_idx_mask(uint8_t bits_per_cb) {
     return (bits_per_cb >= 32u) ? UINT32_MAX : ((1u << bits_per_cb) - 1u);
 }
 
+#if defined(N_SVE_REG_CB_2)
+static svint32_t gemm_extract_weightsx2_s32(svbool_t pg,
+                                            svuint32_t idxs,
+                                            svint32x2_t cb_regs_x2) {
+    const uint32_t n_lanes = (uint32_t)svcntw();
+    svint32_t weights_0 = svtbl_s32(svget2_s32(cb_regs_x2, 0), idxs);
+    svuint32_t idxs_1 = svsub_n_u32_x(pg, idxs, n_lanes);
+    svint32_t weights_1 = svtbl_s32(svget2_s32(cb_regs_x2, 1), idxs_1);
+
+    return svsel_s32(svcmpge_n_u32(pg, idxs, n_lanes), weights_1, weights_0);
+}
+#endif
+
+#if defined(N_SVE_REG_CB_4)
 static svint32_t gemm_extract_weightsx4_s32(svbool_t pg,
                                             svuint32_t idxs,
                                             svint32x4_t cb_regs_x4) {
@@ -29,6 +43,7 @@ static svint32_t gemm_extract_weightsx4_s32(svbool_t pg,
 
     return weights; // Return the same logical result as a wider table lookup.
 }
+#endif
 
 // bits_per_cb = 1 → mask = 0b1
 // bits_per_cb = 2 → mask = 0b11
@@ -175,54 +190,51 @@ void sve_gemm_row_compact_int8_interleaved_4D_diff_seq(
     const uint32_t n_lanes = (uint32_t)svcntw();
     const svuint32_t idx_mask_v = svdup_u32(idx_mask);
 
-    svint32x4_t codebooks_loaded = svld4_s32(svwhilelt_b32((uint64_t)0, (uint64_t)codebook_size), codebook_i32_interleaved); // Load the first interleaved 4D codebook slice, Mentor-style.
-    svint32_t cb0_part0 = svget4_s32(codebooks_loaded, 0); // Keep learner 0 values from the first SVE register.
-    svint32_t cb1_part0 = svget4_s32(codebooks_loaded, 1); // Keep learner 1 values from the first SVE register.
-    svint32_t cb2_part0 = svget4_s32(codebooks_loaded, 2); // Keep learner 2 values from the first SVE register.
-    svint32_t cb3_part0 = svget4_s32(codebooks_loaded, 3); // Keep learner 3 values from the first SVE register.
-    svint32_t cb0_part1 = svdup_n_s32(0); // Reserve learner 0 register 1 for larger codebooks.
-    svint32_t cb1_part1 = svdup_n_s32(0); // Reserve learner 1 register 1 for larger codebooks.
-    svint32_t cb2_part1 = svdup_n_s32(0); // Reserve learner 2 register 1 for larger codebooks.
-    svint32_t cb3_part1 = svdup_n_s32(0); // Reserve learner 3 register 1 for larger codebooks.
-    svint32_t cb0_part2 = svdup_n_s32(0); // Reserve learner 0 register 2 for the 4-register mode.
-    svint32_t cb1_part2 = svdup_n_s32(0); // Reserve learner 1 register 2 for the 4-register mode.
-    svint32_t cb2_part2 = svdup_n_s32(0); // Reserve learner 2 register 2 for the 4-register mode.
-    svint32_t cb3_part2 = svdup_n_s32(0); // Reserve learner 3 register 2 for the 4-register mode.
-    svint32_t cb0_part3 = svdup_n_s32(0); // Reserve learner 0 register 3 for the 4-register mode.
-    svint32_t cb1_part3 = svdup_n_s32(0); // Reserve learner 1 register 3 for the 4-register mode.
-    svint32_t cb2_part3 = svdup_n_s32(0); // Reserve learner 2 register 3 for the 4-register mode.
-    svint32_t cb3_part3 = svdup_n_s32(0); // Reserve learner 3 register 3 for the 4-register mode.
+#if defined(N_SVE_REG_CB_1)
+    svint32x4_t codebooks_loaded = svld4_s32(svwhilelt_b32((uint64_t)0, (uint64_t)codebook_size), codebook_i32_interleaved);
+    svint32_t cb0 = svget4_s32(codebooks_loaded, 0);
+    svint32_t cb1 = svget4_s32(codebooks_loaded, 1);
+    svint32_t cb2 = svget4_s32(codebooks_loaded, 2);
+    svint32_t cb3 = svget4_s32(codebooks_loaded, 3);
 
-#if defined(N_SVE_REG_CB_2) || defined(N_SVE_REG_CB_4)
-    const int32_t *cb_ptr_1 = (n_lanes < codebook_size) ? &codebook_i32_interleaved[n_lanes * 4u] : codebook_i32_interleaved; // Use a valid pointer even when this slice is empty.
-    codebooks_loaded = svld4_s32(svwhilelt_b32((uint64_t)n_lanes, (uint64_t)codebook_size), cb_ptr_1); // Load the second interleaved 4D codebook slice.
-    cb0_part1 = svget4_s32(codebooks_loaded, 0); // Keep learner 0 values from register 1.
-    cb1_part1 = svget4_s32(codebooks_loaded, 1); // Keep learner 1 values from register 1.
-    cb2_part1 = svget4_s32(codebooks_loaded, 2); // Keep learner 2 values from register 1.
-    cb3_part1 = svget4_s32(codebooks_loaded, 3); // Keep learner 3 values from register 1.
+#elif defined(N_SVE_REG_CB_2)
+    svint32x4_t codebooks_loaded = svld4_s32(svwhilelt_b32((uint64_t)0, (uint64_t)codebook_size), &codebook_i32_interleaved[0u * (N_SVE_LANES * 4u)]);
+    svint32x2_t cb0_2regs = svcreate2_s32(svget4_s32(codebooks_loaded, 0), svdup_n_s32(0));
+    svint32x2_t cb1_2regs = svcreate2_s32(svget4_s32(codebooks_loaded, 1), svdup_n_s32(0));
+    svint32x2_t cb2_2regs = svcreate2_s32(svget4_s32(codebooks_loaded, 2), svdup_n_s32(0));
+    svint32x2_t cb3_2regs = svcreate2_s32(svget4_s32(codebooks_loaded, 3), svdup_n_s32(0));
+
+    codebooks_loaded = svld4_s32(svwhilelt_b32((uint64_t)0, (uint64_t)codebook_size), &codebook_i32_interleaved[1u * (N_SVE_LANES * 4u)]);
+    cb0_2regs = svcreate2_s32(svget2_s32(cb0_2regs, 0), svget4_s32(codebooks_loaded, 0));
+    cb1_2regs = svcreate2_s32(svget2_s32(cb1_2regs, 0), svget4_s32(codebooks_loaded, 1));
+    cb2_2regs = svcreate2_s32(svget2_s32(cb2_2regs, 0), svget4_s32(codebooks_loaded, 2));
+    cb3_2regs = svcreate2_s32(svget2_s32(cb3_2regs, 0), svget4_s32(codebooks_loaded, 3));
+
+#elif defined(N_SVE_REG_CB_4)
+    svint32x4_t codebooks_loaded = svld4_s32(svwhilelt_b32((uint64_t)0, (uint64_t)codebook_size), &codebook_i32_interleaved[0u * (N_SVE_LANES * 4u)]);
+    svint32x4_t cb0_4regs = svcreate4_s32(svget4_s32(codebooks_loaded, 0), svdup_n_s32(0), svdup_n_s32(0), svdup_n_s32(0));
+    svint32x4_t cb1_4regs = svcreate4_s32(svget4_s32(codebooks_loaded, 1), svdup_n_s32(0), svdup_n_s32(0), svdup_n_s32(0));
+    svint32x4_t cb2_4regs = svcreate4_s32(svget4_s32(codebooks_loaded, 2), svdup_n_s32(0), svdup_n_s32(0), svdup_n_s32(0));
+    svint32x4_t cb3_4regs = svcreate4_s32(svget4_s32(codebooks_loaded, 3), svdup_n_s32(0), svdup_n_s32(0), svdup_n_s32(0));
+
+    codebooks_loaded = svld4_s32(svwhilelt_b32((uint64_t)0, (uint64_t)codebook_size), &codebook_i32_interleaved[1u * (N_SVE_LANES * 4u)]);
+    cb0_4regs = svcreate4_s32(svget4_s32(cb0_4regs, 0), svget4_s32(codebooks_loaded, 0), svdup_n_s32(0), svdup_n_s32(0));
+    cb1_4regs = svcreate4_s32(svget4_s32(cb1_4regs, 0), svget4_s32(codebooks_loaded, 1), svdup_n_s32(0), svdup_n_s32(0));
+    cb2_4regs = svcreate4_s32(svget4_s32(cb2_4regs, 0), svget4_s32(codebooks_loaded, 2), svdup_n_s32(0), svdup_n_s32(0));
+    cb3_4regs = svcreate4_s32(svget4_s32(cb3_4regs, 0), svget4_s32(codebooks_loaded, 3), svdup_n_s32(0), svdup_n_s32(0));
+
+    codebooks_loaded = svld4_s32(svwhilelt_b32((uint64_t)0, (uint64_t)codebook_size), &codebook_i32_interleaved[2u * (N_SVE_LANES * 4u)]);
+    cb0_4regs = svcreate4_s32(svget4_s32(cb0_4regs, 0), svget4_s32(cb0_4regs, 1), svget4_s32(codebooks_loaded, 0), svdup_n_s32(0));
+    cb1_4regs = svcreate4_s32(svget4_s32(cb1_4regs, 0), svget4_s32(cb1_4regs, 1), svget4_s32(codebooks_loaded, 1), svdup_n_s32(0));
+    cb2_4regs = svcreate4_s32(svget4_s32(cb2_4regs, 0), svget4_s32(cb2_4regs, 1), svget4_s32(codebooks_loaded, 2), svdup_n_s32(0));
+    cb3_4regs = svcreate4_s32(svget4_s32(cb3_4regs, 0), svget4_s32(cb3_4regs, 1), svget4_s32(codebooks_loaded, 3), svdup_n_s32(0));
+
+    codebooks_loaded = svld4_s32(svwhilelt_b32((uint64_t)0, (uint64_t)codebook_size), &codebook_i32_interleaved[3u * (N_SVE_LANES * 4u)]);
+    cb0_4regs = svcreate4_s32(svget4_s32(cb0_4regs, 0), svget4_s32(cb0_4regs, 1), svget4_s32(cb0_4regs, 2), svget4_s32(codebooks_loaded, 0));
+    cb1_4regs = svcreate4_s32(svget4_s32(cb1_4regs, 0), svget4_s32(cb1_4regs, 1), svget4_s32(cb1_4regs, 2), svget4_s32(codebooks_loaded, 1));
+    cb2_4regs = svcreate4_s32(svget4_s32(cb2_4regs, 0), svget4_s32(cb2_4regs, 1), svget4_s32(cb2_4regs, 2), svget4_s32(codebooks_loaded, 2));
+    cb3_4regs = svcreate4_s32(svget4_s32(cb3_4regs, 0), svget4_s32(cb3_4regs, 1), svget4_s32(cb3_4regs, 2), svget4_s32(codebooks_loaded, 3));
 #endif
-
-#if defined(N_SVE_REG_CB_4)
-    const uint32_t cb_offset_2 = 2u * n_lanes; // Start of the third codebook slice.
-    const int32_t *cb_ptr_2 = (cb_offset_2 < codebook_size) ? &codebook_i32_interleaved[cb_offset_2 * 4u] : codebook_i32_interleaved; // Use a valid pointer for predicated empty loads.
-    codebooks_loaded = svld4_s32(svwhilelt_b32((uint64_t)cb_offset_2, (uint64_t)codebook_size), cb_ptr_2); // Load the third interleaved 4D codebook slice.
-    cb0_part2 = svget4_s32(codebooks_loaded, 0); // Keep learner 0 values from register 2.
-    cb1_part2 = svget4_s32(codebooks_loaded, 1); // Keep learner 1 values from register 2.
-    cb2_part2 = svget4_s32(codebooks_loaded, 2); // Keep learner 2 values from register 2.
-    cb3_part2 = svget4_s32(codebooks_loaded, 3); // Keep learner 3 values from register 2.
-    const uint32_t cb_offset_3 = 3u * n_lanes; // Start of the fourth codebook slice.
-    const int32_t *cb_ptr_3 = (cb_offset_3 < codebook_size) ? &codebook_i32_interleaved[cb_offset_3 * 4u] : codebook_i32_interleaved; // Use a valid pointer for predicated empty loads.
-    codebooks_loaded = svld4_s32(svwhilelt_b32((uint64_t)cb_offset_3, (uint64_t)codebook_size), cb_ptr_3); // Load the fourth interleaved 4D codebook slice.
-    cb0_part3 = svget4_s32(codebooks_loaded, 0); // Keep learner 0 values from register 3.
-    cb1_part3 = svget4_s32(codebooks_loaded, 1); // Keep learner 1 values from register 3.
-    cb2_part3 = svget4_s32(codebooks_loaded, 2); // Keep learner 2 values from register 3.
-    cb3_part3 = svget4_s32(codebooks_loaded, 3); // Keep learner 3 values from register 3.
-#endif
-
-    svint32x4_t cb0_regs = svcreate4_s32(cb0_part0, cb0_part1, cb0_part2, cb0_part3); // Pack learner 0 codebook registers for table lookup.
-    svint32x4_t cb1_regs = svcreate4_s32(cb1_part0, cb1_part1, cb1_part2, cb1_part3); // Pack learner 1 codebook registers for table lookup.
-    svint32x4_t cb2_regs = svcreate4_s32(cb2_part0, cb2_part1, cb2_part2, cb2_part3); // Pack learner 2 codebook registers for table lookup.
-    svint32x4_t cb3_regs = svcreate4_s32(cb3_part0, cb3_part1, cb3_part2, cb3_part3); // Pack learner 3 codebook registers for table lookup.
 
     for (uint32_t row = 0; row < seq_tile; row++) {
         svint32_t acc_v0 = svdup_s32(0);
@@ -284,14 +296,31 @@ void sve_gemm_row_compact_int8_interleaved_4D_diff_seq(
                     svint32_t in2 = svget4_s32(in_vals, 2);
                     svint32_t in3 = svget4_s32(in_vals, 3);
 
-                    svint32_t weights0 =
-                        gemm_extract_weightsx4_s32(bits_pg, cb_idxs0, cb0_regs); // Select learner 0 weights from the preloaded interleaved codebook.
-                    svint32_t weights1 =
-                        gemm_extract_weightsx4_s32(bits_pg, cb_idxs1, cb1_regs); // Select learner 1 weights from the preloaded interleaved codebook.
-                    svint32_t weights2 =
-                        gemm_extract_weightsx4_s32(bits_pg, cb_idxs2, cb2_regs); // Select learner 2 weights from the preloaded interleaved codebook.
-                    svint32_t weights3 =
-                        gemm_extract_weightsx4_s32(bits_pg, cb_idxs3, cb3_regs); // Select learner 3 weights from the preloaded interleaved codebook.
+                    svint32_t weights0 = svdup_n_s32(0);
+                    svint32_t weights1 = svdup_n_s32(0);
+                    svint32_t weights2 = svdup_n_s32(0);
+                    svint32_t weights3 = svdup_n_s32(0);
+
+#ifdef N_SVE_REG_CB_1
+                    weights0 = svtbl_s32(cb0, cb_idxs0);
+                    weights1 = svtbl_s32(cb1, cb_idxs1);
+                    weights2 = svtbl_s32(cb2, cb_idxs2);
+                    weights3 = svtbl_s32(cb3, cb_idxs3);
+#endif
+
+#ifdef N_SVE_REG_CB_2
+                    weights0 = gemm_extract_weightsx2_s32(bits_pg, cb_idxs0, cb0_2regs);
+                    weights1 = gemm_extract_weightsx2_s32(bits_pg, cb_idxs1, cb1_2regs);
+                    weights2 = gemm_extract_weightsx2_s32(bits_pg, cb_idxs2, cb2_2regs);
+                    weights3 = gemm_extract_weightsx2_s32(bits_pg, cb_idxs3, cb3_2regs);
+#endif
+
+#ifdef N_SVE_REG_CB_4
+                    weights0 = gemm_extract_weightsx4_s32(bits_pg, cb_idxs0, cb0_4regs);
+                    weights1 = gemm_extract_weightsx4_s32(bits_pg, cb_idxs1, cb1_4regs);
+                    weights2 = gemm_extract_weightsx4_s32(bits_pg, cb_idxs2, cb2_4regs);
+                    weights3 = gemm_extract_weightsx4_s32(bits_pg, cb_idxs3, cb3_4regs);
+#endif
 
                     acc_v0 = svmla_s32_m(bits_pg, acc_v0, in0, weights0);
                     acc_v1 = svmla_s32_m(bits_pg, acc_v1, in1, weights1);
@@ -372,38 +401,37 @@ void sve_gemm_row_compact_int8_interleaved_2D_same_seq(
     const uint32_t n_lanes = (uint32_t)svcntw();
     const svuint32_t idx_mask_v = svdup_u32(idx_mask);
 
-    svint32x2_t codebooks_loaded = svld2_s32(svwhilelt_b32((uint64_t)0, (uint64_t)codebook_size), codebook_i32_interleaved); // Load the first interleaved 2D codebook slice, Mentor-style.
-    svint32_t cb0_part0 = svget2_s32(codebooks_loaded, 0); // Keep learner 0 values from the first SVE register.
-    svint32_t cb1_part0 = svget2_s32(codebooks_loaded, 1); // Keep learner 1 values from the first SVE register.
-    svint32_t cb0_part1 = svdup_n_s32(0); // Reserve learner 0 register 1 for larger codebooks.
-    svint32_t cb1_part1 = svdup_n_s32(0); // Reserve learner 1 register 1 for larger codebooks.
-    svint32_t cb0_part2 = svdup_n_s32(0); // Reserve learner 0 register 2 for the 4-register mode.
-    svint32_t cb1_part2 = svdup_n_s32(0); // Reserve learner 1 register 2 for the 4-register mode.
-    svint32_t cb0_part3 = svdup_n_s32(0); // Reserve learner 0 register 3 for the 4-register mode.
-    svint32_t cb1_part3 = svdup_n_s32(0); // Reserve learner 1 register 3 for the 4-register mode.
+#if defined(N_SVE_REG_CB_1)
+    svint32x2_t codebooks_loaded = svld2_s32(svwhilelt_b32((uint64_t)0, (uint64_t)codebook_size), codebook_i32_interleaved);
+    svint32_t cb0 = svget2_s32(codebooks_loaded, 0);
+    svint32_t cb1 = svget2_s32(codebooks_loaded, 1);
 
-#if defined(N_SVE_REG_CB_2) || defined(N_SVE_REG_CB_4)
-    const int32_t *cb_ptr_1 = (n_lanes < codebook_size) ? &codebook_i32_interleaved[n_lanes * 2u] : codebook_i32_interleaved; // Keep the pointer valid for predicated empty loads.
-    codebooks_loaded = svld2_s32(svwhilelt_b32((uint64_t)n_lanes, (uint64_t)codebook_size), cb_ptr_1); // Load the second interleaved 2D codebook slice.
-    cb0_part1 = svget2_s32(codebooks_loaded, 0); // Keep learner 0 values from register 1.
-    cb1_part1 = svget2_s32(codebooks_loaded, 1); // Keep learner 1 values from register 1.
+#elif defined(N_SVE_REG_CB_2)
+    svint32x2_t codebooks_loaded = svld2_s32(svwhilelt_b32((uint64_t)0, (uint64_t)codebook_size), &codebook_i32_interleaved[0u * (N_SVE_LANES * 2u)]);
+    svint32x2_t cb0_2regs = svcreate2_s32(svget2_s32(codebooks_loaded, 0), svdup_n_s32(0));
+    svint32x2_t cb1_2regs = svcreate2_s32(svget2_s32(codebooks_loaded, 1), svdup_n_s32(0));
+
+    codebooks_loaded = svld2_s32(svwhilelt_b32((uint64_t)0, (uint64_t)codebook_size), &codebook_i32_interleaved[1u * (N_SVE_LANES * 2u)]);
+    cb0_2regs = svcreate2_s32(svget2_s32(cb0_2regs, 0), svget2_s32(codebooks_loaded, 0));
+    cb1_2regs = svcreate2_s32(svget2_s32(cb1_2regs, 0), svget2_s32(codebooks_loaded, 1));
+
+#elif defined(N_SVE_REG_CB_4)
+    svint32x2_t codebooks_loaded = svld2_s32(svwhilelt_b32((uint64_t)0, (uint64_t)codebook_size), &codebook_i32_interleaved[0u * (N_SVE_LANES * 2u)]);
+    svint32x4_t cb0_4regs = svcreate4_s32(svget2_s32(codebooks_loaded, 0), svdup_n_s32(0), svdup_n_s32(0), svdup_n_s32(0));
+    svint32x4_t cb1_4regs = svcreate4_s32(svget2_s32(codebooks_loaded, 1), svdup_n_s32(0), svdup_n_s32(0), svdup_n_s32(0));
+
+    codebooks_loaded = svld2_s32(svwhilelt_b32((uint64_t)0, (uint64_t)codebook_size), &codebook_i32_interleaved[1u * (N_SVE_LANES * 2u)]);
+    cb0_4regs = svcreate4_s32(svget4_s32(cb0_4regs, 0), svget2_s32(codebooks_loaded, 0), svdup_n_s32(0), svdup_n_s32(0));
+    cb1_4regs = svcreate4_s32(svget4_s32(cb1_4regs, 0), svget2_s32(codebooks_loaded, 1), svdup_n_s32(0), svdup_n_s32(0));
+
+    codebooks_loaded = svld2_s32(svwhilelt_b32((uint64_t)0, (uint64_t)codebook_size), &codebook_i32_interleaved[2u * (N_SVE_LANES * 2u)]);
+    cb0_4regs = svcreate4_s32(svget4_s32(cb0_4regs, 0), svget4_s32(cb0_4regs, 1), svget2_s32(codebooks_loaded, 0), svdup_n_s32(0));
+    cb1_4regs = svcreate4_s32(svget4_s32(cb1_4regs, 0), svget4_s32(cb1_4regs, 1), svget2_s32(codebooks_loaded, 1), svdup_n_s32(0));
+
+    codebooks_loaded = svld2_s32(svwhilelt_b32((uint64_t)0, (uint64_t)codebook_size), &codebook_i32_interleaved[3u * (N_SVE_LANES * 2u)]);
+    cb0_4regs = svcreate4_s32(svget4_s32(cb0_4regs, 0), svget4_s32(cb0_4regs, 1), svget4_s32(cb0_4regs, 2), svget2_s32(codebooks_loaded, 0));
+    cb1_4regs = svcreate4_s32(svget4_s32(cb1_4regs, 0), svget4_s32(cb1_4regs, 1), svget4_s32(cb1_4regs, 2), svget2_s32(codebooks_loaded, 1));
 #endif
-
-#if defined(N_SVE_REG_CB_4)
-    const uint32_t cb_offset_2 = 2u * n_lanes; // Start of the third codebook slice.
-    const int32_t *cb_ptr_2 = (cb_offset_2 < codebook_size) ? &codebook_i32_interleaved[cb_offset_2 * 2u] : codebook_i32_interleaved; // Keep the pointer valid for predicated empty loads.
-    codebooks_loaded = svld2_s32(svwhilelt_b32((uint64_t)cb_offset_2, (uint64_t)codebook_size), cb_ptr_2); // Load the third interleaved 2D codebook slice.
-    cb0_part2 = svget2_s32(codebooks_loaded, 0); // Keep learner 0 values from register 2.
-    cb1_part2 = svget2_s32(codebooks_loaded, 1); // Keep learner 1 values from register 2.
-    const uint32_t cb_offset_3 = 3u * n_lanes; // Start of the fourth codebook slice.
-    const int32_t *cb_ptr_3 = (cb_offset_3 < codebook_size) ? &codebook_i32_interleaved[cb_offset_3 * 2u] : codebook_i32_interleaved; // Keep the pointer valid for predicated empty loads.
-    codebooks_loaded = svld2_s32(svwhilelt_b32((uint64_t)cb_offset_3, (uint64_t)codebook_size), cb_ptr_3); // Load the fourth interleaved 2D codebook slice.
-    cb0_part3 = svget2_s32(codebooks_loaded, 0); // Keep learner 0 values from register 3.
-    cb1_part3 = svget2_s32(codebooks_loaded, 1); // Keep learner 1 values from register 3.
-#endif
-
-    svint32x4_t cb0_regs = svcreate4_s32(cb0_part0, cb0_part1, cb0_part2, cb0_part3); // Pack learner 0 codebook registers for table lookup.
-    svint32x4_t cb1_regs = svcreate4_s32(cb1_part0, cb1_part1, cb1_part2, cb1_part3); // Pack learner 1 codebook registers for table lookup.
 
     for (uint32_t row = 0; row < seq_tile; row++) {
         svint32_t acc_v0 = svdup_s32(0);
@@ -443,10 +471,23 @@ void sve_gemm_row_compact_int8_interleaved_2D_same_seq(
                     svint32_t in0 = svget2_s32(in_vals, 0);
                     svint32_t in1 = svget2_s32(in_vals, 1);
 
-                    svint32_t weights0 =
-                        gemm_extract_weightsx4_s32(bits_pg, cb_idxs, cb0_regs); // Select learner 0 weights from the preloaded interleaved codebook.
-                    svint32_t weights1 =
-                        gemm_extract_weightsx4_s32(bits_pg, cb_idxs, cb1_regs); // Select learner 1 weights from the preloaded interleaved codebook.
+                    svint32_t weights0 = svdup_n_s32(0);
+                    svint32_t weights1 = svdup_n_s32(0);
+
+#ifdef N_SVE_REG_CB_1
+                    weights0 = svtbl_s32(cb0, cb_idxs);
+                    weights1 = svtbl_s32(cb1, cb_idxs);
+#endif
+
+#ifdef N_SVE_REG_CB_2
+                    weights0 = gemm_extract_weightsx2_s32(bits_pg, cb_idxs, cb0_2regs);
+                    weights1 = gemm_extract_weightsx2_s32(bits_pg, cb_idxs, cb1_2regs);
+#endif
+
+#ifdef N_SVE_REG_CB_4
+                    weights0 = gemm_extract_weightsx4_s32(bits_pg, cb_idxs, cb0_4regs);
+                    weights1 = gemm_extract_weightsx4_s32(bits_pg, cb_idxs, cb1_4regs);
+#endif
 
                     acc_v0 = svmla_s32_m(bits_pg, acc_v0, in0, weights0);
                     acc_v1 = svmla_s32_m(bits_pg, acc_v1, in1, weights1);
@@ -525,54 +566,51 @@ void sve_gemm_row_compact_int8_interleaved_4D_same_seq(
     const uint32_t n_lanes = (uint32_t)svcntw();
     const svuint32_t idx_mask_v = svdup_u32(idx_mask);
 
-    svint32x4_t codebooks_loaded = svld4_s32(svwhilelt_b32((uint64_t)0, (uint64_t)codebook_size), codebook_i32_interleaved); // Load the first interleaved 4D codebook slice, Mentor-style.
-    svint32_t cb0_part0 = svget4_s32(codebooks_loaded, 0); // Keep learner 0 values from the first SVE register.
-    svint32_t cb1_part0 = svget4_s32(codebooks_loaded, 1); // Keep learner 1 values from the first SVE register.
-    svint32_t cb2_part0 = svget4_s32(codebooks_loaded, 2); // Keep learner 2 values from the first SVE register.
-    svint32_t cb3_part0 = svget4_s32(codebooks_loaded, 3); // Keep learner 3 values from the first SVE register.
-    svint32_t cb0_part1 = svdup_n_s32(0); // Reserve learner 0 register 1 for larger codebooks.
-    svint32_t cb1_part1 = svdup_n_s32(0); // Reserve learner 1 register 1 for larger codebooks.
-    svint32_t cb2_part1 = svdup_n_s32(0); // Reserve learner 2 register 1 for larger codebooks.
-    svint32_t cb3_part1 = svdup_n_s32(0); // Reserve learner 3 register 1 for larger codebooks.
-    svint32_t cb0_part2 = svdup_n_s32(0); // Reserve learner 0 register 2 for the 4-register mode.
-    svint32_t cb1_part2 = svdup_n_s32(0); // Reserve learner 1 register 2 for the 4-register mode.
-    svint32_t cb2_part2 = svdup_n_s32(0); // Reserve learner 2 register 2 for the 4-register mode.
-    svint32_t cb3_part2 = svdup_n_s32(0); // Reserve learner 3 register 2 for the 4-register mode.
-    svint32_t cb0_part3 = svdup_n_s32(0); // Reserve learner 0 register 3 for the 4-register mode.
-    svint32_t cb1_part3 = svdup_n_s32(0); // Reserve learner 1 register 3 for the 4-register mode.
-    svint32_t cb2_part3 = svdup_n_s32(0); // Reserve learner 2 register 3 for the 4-register mode.
-    svint32_t cb3_part3 = svdup_n_s32(0); // Reserve learner 3 register 3 for the 4-register mode.
+#if defined(N_SVE_REG_CB_1)
+    svint32x4_t codebooks_loaded = svld4_s32(svwhilelt_b32((uint64_t)0, (uint64_t)codebook_size), codebook_i32_interleaved);
+    svint32_t cb0 = svget4_s32(codebooks_loaded, 0);
+    svint32_t cb1 = svget4_s32(codebooks_loaded, 1);
+    svint32_t cb2 = svget4_s32(codebooks_loaded, 2);
+    svint32_t cb3 = svget4_s32(codebooks_loaded, 3);
 
-#if defined(N_SVE_REG_CB_2) || defined(N_SVE_REG_CB_4)
-    const int32_t *cb_ptr_1 = (n_lanes < codebook_size) ? &codebook_i32_interleaved[n_lanes * 4u] : codebook_i32_interleaved; // Use a valid pointer even when this slice is empty.
-    codebooks_loaded = svld4_s32(svwhilelt_b32((uint64_t)n_lanes, (uint64_t)codebook_size), cb_ptr_1); // Load the second interleaved 4D codebook slice.
-    cb0_part1 = svget4_s32(codebooks_loaded, 0); // Keep learner 0 values from register 1.
-    cb1_part1 = svget4_s32(codebooks_loaded, 1); // Keep learner 1 values from register 1.
-    cb2_part1 = svget4_s32(codebooks_loaded, 2); // Keep learner 2 values from register 1.
-    cb3_part1 = svget4_s32(codebooks_loaded, 3); // Keep learner 3 values from register 1.
+#elif defined(N_SVE_REG_CB_2)
+    svint32x4_t codebooks_loaded = svld4_s32(svwhilelt_b32((uint64_t)0, (uint64_t)codebook_size), &codebook_i32_interleaved[0u * (N_SVE_LANES * 4u)]);
+    svint32x2_t cb0_2regs = svcreate2_s32(svget4_s32(codebooks_loaded, 0), svdup_n_s32(0));
+    svint32x2_t cb1_2regs = svcreate2_s32(svget4_s32(codebooks_loaded, 1), svdup_n_s32(0));
+    svint32x2_t cb2_2regs = svcreate2_s32(svget4_s32(codebooks_loaded, 2), svdup_n_s32(0));
+    svint32x2_t cb3_2regs = svcreate2_s32(svget4_s32(codebooks_loaded, 3), svdup_n_s32(0));
+
+    codebooks_loaded = svld4_s32(svwhilelt_b32((uint64_t)0, (uint64_t)codebook_size), &codebook_i32_interleaved[1u * (N_SVE_LANES * 4u)]);
+    cb0_2regs = svcreate2_s32(svget2_s32(cb0_2regs, 0), svget4_s32(codebooks_loaded, 0));
+    cb1_2regs = svcreate2_s32(svget2_s32(cb1_2regs, 0), svget4_s32(codebooks_loaded, 1));
+    cb2_2regs = svcreate2_s32(svget2_s32(cb2_2regs, 0), svget4_s32(codebooks_loaded, 2));
+    cb3_2regs = svcreate2_s32(svget2_s32(cb3_2regs, 0), svget4_s32(codebooks_loaded, 3));
+
+#elif defined(N_SVE_REG_CB_4)
+    svint32x4_t codebooks_loaded = svld4_s32(svwhilelt_b32((uint64_t)0, (uint64_t)codebook_size), &codebook_i32_interleaved[0u * (N_SVE_LANES * 4u)]);
+    svint32x4_t cb0_4regs = svcreate4_s32(svget4_s32(codebooks_loaded, 0), svdup_n_s32(0), svdup_n_s32(0), svdup_n_s32(0));
+    svint32x4_t cb1_4regs = svcreate4_s32(svget4_s32(codebooks_loaded, 1), svdup_n_s32(0), svdup_n_s32(0), svdup_n_s32(0));
+    svint32x4_t cb2_4regs = svcreate4_s32(svget4_s32(codebooks_loaded, 2), svdup_n_s32(0), svdup_n_s32(0), svdup_n_s32(0));
+    svint32x4_t cb3_4regs = svcreate4_s32(svget4_s32(codebooks_loaded, 3), svdup_n_s32(0), svdup_n_s32(0), svdup_n_s32(0));
+
+    codebooks_loaded = svld4_s32(svwhilelt_b32((uint64_t)0, (uint64_t)codebook_size), &codebook_i32_interleaved[1u * (N_SVE_LANES * 4u)]);
+    cb0_4regs = svcreate4_s32(svget4_s32(cb0_4regs, 0), svget4_s32(codebooks_loaded, 0), svdup_n_s32(0), svdup_n_s32(0));
+    cb1_4regs = svcreate4_s32(svget4_s32(cb1_4regs, 0), svget4_s32(codebooks_loaded, 1), svdup_n_s32(0), svdup_n_s32(0));
+    cb2_4regs = svcreate4_s32(svget4_s32(cb2_4regs, 0), svget4_s32(codebooks_loaded, 2), svdup_n_s32(0), svdup_n_s32(0));
+    cb3_4regs = svcreate4_s32(svget4_s32(cb3_4regs, 0), svget4_s32(codebooks_loaded, 3), svdup_n_s32(0), svdup_n_s32(0));
+
+    codebooks_loaded = svld4_s32(svwhilelt_b32((uint64_t)0, (uint64_t)codebook_size), &codebook_i32_interleaved[2u * (N_SVE_LANES * 4u)]);
+    cb0_4regs = svcreate4_s32(svget4_s32(cb0_4regs, 0), svget4_s32(cb0_4regs, 1), svget4_s32(codebooks_loaded, 0), svdup_n_s32(0));
+    cb1_4regs = svcreate4_s32(svget4_s32(cb1_4regs, 0), svget4_s32(cb1_4regs, 1), svget4_s32(codebooks_loaded, 1), svdup_n_s32(0));
+    cb2_4regs = svcreate4_s32(svget4_s32(cb2_4regs, 0), svget4_s32(cb2_4regs, 1), svget4_s32(codebooks_loaded, 2), svdup_n_s32(0));
+    cb3_4regs = svcreate4_s32(svget4_s32(cb3_4regs, 0), svget4_s32(cb3_4regs, 1), svget4_s32(codebooks_loaded, 3), svdup_n_s32(0));
+
+    codebooks_loaded = svld4_s32(svwhilelt_b32((uint64_t)0, (uint64_t)codebook_size), &codebook_i32_interleaved[3u * (N_SVE_LANES * 4u)]);
+    cb0_4regs = svcreate4_s32(svget4_s32(cb0_4regs, 0), svget4_s32(cb0_4regs, 1), svget4_s32(cb0_4regs, 2), svget4_s32(codebooks_loaded, 0));
+    cb1_4regs = svcreate4_s32(svget4_s32(cb1_4regs, 0), svget4_s32(cb1_4regs, 1), svget4_s32(cb1_4regs, 2), svget4_s32(codebooks_loaded, 1));
+    cb2_4regs = svcreate4_s32(svget4_s32(cb2_4regs, 0), svget4_s32(cb2_4regs, 1), svget4_s32(cb2_4regs, 2), svget4_s32(codebooks_loaded, 2));
+    cb3_4regs = svcreate4_s32(svget4_s32(cb3_4regs, 0), svget4_s32(cb3_4regs, 1), svget4_s32(cb3_4regs, 2), svget4_s32(codebooks_loaded, 3));
 #endif
-
-#if defined(N_SVE_REG_CB_4)
-    const uint32_t cb_offset_2 = 2u * n_lanes; // Start of the third codebook slice.
-    const int32_t *cb_ptr_2 = (cb_offset_2 < codebook_size) ? &codebook_i32_interleaved[cb_offset_2 * 4u] : codebook_i32_interleaved; // Use a valid pointer for predicated empty loads.
-    codebooks_loaded = svld4_s32(svwhilelt_b32((uint64_t)cb_offset_2, (uint64_t)codebook_size), cb_ptr_2); // Load the third interleaved 4D codebook slice.
-    cb0_part2 = svget4_s32(codebooks_loaded, 0); // Keep learner 0 values from register 2.
-    cb1_part2 = svget4_s32(codebooks_loaded, 1); // Keep learner 1 values from register 2.
-    cb2_part2 = svget4_s32(codebooks_loaded, 2); // Keep learner 2 values from register 2.
-    cb3_part2 = svget4_s32(codebooks_loaded, 3); // Keep learner 3 values from register 2.
-    const uint32_t cb_offset_3 = 3u * n_lanes; // Start of the fourth codebook slice.
-    const int32_t *cb_ptr_3 = (cb_offset_3 < codebook_size) ? &codebook_i32_interleaved[cb_offset_3 * 4u] : codebook_i32_interleaved; // Use a valid pointer for predicated empty loads.
-    codebooks_loaded = svld4_s32(svwhilelt_b32((uint64_t)cb_offset_3, (uint64_t)codebook_size), cb_ptr_3); // Load the fourth interleaved 4D codebook slice.
-    cb0_part3 = svget4_s32(codebooks_loaded, 0); // Keep learner 0 values from register 3.
-    cb1_part3 = svget4_s32(codebooks_loaded, 1); // Keep learner 1 values from register 3.
-    cb2_part3 = svget4_s32(codebooks_loaded, 2); // Keep learner 2 values from register 3.
-    cb3_part3 = svget4_s32(codebooks_loaded, 3); // Keep learner 3 values from register 3.
-#endif
-
-    svint32x4_t cb0_regs = svcreate4_s32(cb0_part0, cb0_part1, cb0_part2, cb0_part3); // Pack learner 0 codebook registers for table lookup.
-    svint32x4_t cb1_regs = svcreate4_s32(cb1_part0, cb1_part1, cb1_part2, cb1_part3); // Pack learner 1 codebook registers for table lookup.
-    svint32x4_t cb2_regs = svcreate4_s32(cb2_part0, cb2_part1, cb2_part2, cb2_part3); // Pack learner 2 codebook registers for table lookup.
-    svint32x4_t cb3_regs = svcreate4_s32(cb3_part0, cb3_part1, cb3_part2, cb3_part3); // Pack learner 3 codebook registers for table lookup.
 
     for (uint32_t row = 0; row < seq_tile; row++) {
         svint32_t acc_v0 = svdup_s32(0);
@@ -616,14 +654,31 @@ void sve_gemm_row_compact_int8_interleaved_4D_same_seq(
                     svint32_t in2 = svget4_s32(in_vals, 2);
                     svint32_t in3 = svget4_s32(in_vals, 3);
 
-                    svint32_t weights0 =
-                        gemm_extract_weightsx4_s32(bits_pg, cb_idxs, cb0_regs); // Select learner 0 weights from the preloaded interleaved codebook.
-                    svint32_t weights1 =
-                        gemm_extract_weightsx4_s32(bits_pg, cb_idxs, cb1_regs); // Select learner 1 weights from the preloaded interleaved codebook.
-                    svint32_t weights2 =
-                        gemm_extract_weightsx4_s32(bits_pg, cb_idxs, cb2_regs); // Select learner 2 weights from the preloaded interleaved codebook.
-                    svint32_t weights3 =
-                        gemm_extract_weightsx4_s32(bits_pg, cb_idxs, cb3_regs); // Select learner 3 weights from the preloaded interleaved codebook.
+                    svint32_t weights0 = svdup_n_s32(0);
+                    svint32_t weights1 = svdup_n_s32(0);
+                    svint32_t weights2 = svdup_n_s32(0);
+                    svint32_t weights3 = svdup_n_s32(0);
+
+#ifdef N_SVE_REG_CB_1
+                    weights0 = svtbl_s32(cb0, cb_idxs);
+                    weights1 = svtbl_s32(cb1, cb_idxs);
+                    weights2 = svtbl_s32(cb2, cb_idxs);
+                    weights3 = svtbl_s32(cb3, cb_idxs);
+#endif
+
+#ifdef N_SVE_REG_CB_2
+                    weights0 = gemm_extract_weightsx2_s32(bits_pg, cb_idxs, cb0_2regs);
+                    weights1 = gemm_extract_weightsx2_s32(bits_pg, cb_idxs, cb1_2regs);
+                    weights2 = gemm_extract_weightsx2_s32(bits_pg, cb_idxs, cb2_2regs);
+                    weights3 = gemm_extract_weightsx2_s32(bits_pg, cb_idxs, cb3_2regs);
+#endif
+
+#ifdef N_SVE_REG_CB_4
+                    weights0 = gemm_extract_weightsx4_s32(bits_pg, cb_idxs, cb0_4regs);
+                    weights1 = gemm_extract_weightsx4_s32(bits_pg, cb_idxs, cb1_4regs);
+                    weights2 = gemm_extract_weightsx4_s32(bits_pg, cb_idxs, cb2_4regs);
+                    weights3 = gemm_extract_weightsx4_s32(bits_pg, cb_idxs, cb3_4regs);
+#endif
 
                     acc_v0 = svmla_s32_m(bits_pg, acc_v0, in0, weights0);
                     acc_v1 = svmla_s32_m(bits_pg, acc_v1, in1, weights1);
