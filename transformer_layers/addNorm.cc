@@ -116,6 +116,52 @@ void AddNormalize::computeInterleaved4D(int8_t *input_interleaved, int8_t *outpu
     }
 }
 
+void AddNormalize::computeInterleaved2D(int8_t *input_interleaved, int8_t *output_interleaved) {
+    for (std::size_t seq = 0; seq < seq_len_; seq++) {
+        int32_t sum[2] = {0, 0};
+
+        for (std::size_t feature = 0; feature < input_dim_; feature++) {
+            int8_t* out_slot = output_interleaved + ((seq * input_dim_ + feature) * 2u);
+            const int8_t* in_slot = input_interleaved + ((seq * input_dim_ + feature) * 2u);
+
+            for (std::size_t learner = 0; learner < 2u; learner++) {
+                out_slot[learner] = static_cast<int8_t>(out_slot[learner] + in_slot[learner]);
+                sum[learner] += out_slot[learner];
+            }
+        }
+
+        int32_t mean[2];
+        for (std::size_t learner = 0; learner < 2u; learner++) {
+            mean[learner] = sum[learner] / static_cast<int32_t>(input_dim_);
+        }
+
+        int32_t variance[2] = {0, 0};
+        for (std::size_t feature = 0; feature < input_dim_; feature++) {
+            const int8_t* out_slot = output_interleaved + ((seq * input_dim_ + feature) * 2u);
+            for (std::size_t learner = 0; learner < 2u; learner++) {
+                int32_t diff = static_cast<int32_t>(out_slot[learner]) - mean[learner];
+                variance[learner] += diff * diff;
+            }
+        }
+
+        int32_t sd_inv[2];
+        for (std::size_t learner = 0; learner < 2u; learner++) {
+            variance[learner] = variance[learner] / static_cast<int32_t>(input_dim_);
+            double sd = sqrt(static_cast<double>(variance[learner]));
+            sd_inv[learner] = static_cast<int32_t>((1 << 8) / (sd + 1));
+        }
+
+        for (std::size_t feature = 0; feature < input_dim_; feature++) {
+            int8_t* out_slot = output_interleaved + ((seq * input_dim_ + feature) * 2u);
+            for (std::size_t learner = 0; learner < 2u; learner++) {
+                out_slot[learner] = static_cast<int8_t>(
+                    ((static_cast<int32_t>(out_slot[learner]) - mean[learner]) *
+                     sd_inv[learner]) >> 8);
+            }
+        }
+    }
+}
+
 
 void AddNormalize::computeRearranged(uint32_t *input, uint32_t *output) {
     auto* input_ptr = (int8_t*) (input );

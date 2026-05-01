@@ -21,6 +21,7 @@ int8_t unpackPackedValueLocal(const uint32_t* row, std::size_t elem_idx) {
 void packOneLearner(const int8_t* input_interleaved,
                     std::size_t rows,
                     std::size_t cols,
+                    std::size_t learner_count,
                     std::size_t learner,
                     std::vector<uint32_t>& packed) {
     const std::size_t packed_cols = (cols + 3u) / 4u;
@@ -31,7 +32,7 @@ void packOneLearner(const int8_t* input_interleaved,
             const std::size_t packed_idx = row * packed_cols + (col / 4u);
             const std::size_t byte_idx = col % 4u;
             const uint8_t value = static_cast<uint8_t>(
-                input_interleaved[((row * cols) + col) * 4u + learner]);
+                input_interleaved[((row * cols) + col) * learner_count + learner]);
             packed[packed_idx] |= static_cast<uint32_t>(value) << (byte_idx * 8u);
         }
     }
@@ -55,6 +56,22 @@ void interleavePackedLearners4(std::size_t rows,
     }
 }
 
+void interleavePackedLearners2(std::size_t rows,
+                               std::size_t cols,
+                               uint32_t* const inputs[2],
+                               int8_t* output_interleaved) {
+    const std::size_t packed_cols = (cols + 3u) / 4u;
+
+    for (std::size_t row = 0; row < rows; row++) {
+        for (std::size_t col = 0; col < cols; col++) {
+            for (std::size_t learner = 0; learner < 2u; learner++) {
+                output_interleaved[((row * cols) + col) * 2u + learner] =
+                    unpackPackedValueLocal(inputs[learner] + row * packed_cols, col);
+            }
+        }
+    }
+}
+
 void packInterleavedLearners4(std::size_t rows,
                               std::size_t cols,
                               const int8_t* input_interleaved,
@@ -62,7 +79,19 @@ void packInterleavedLearners4(std::size_t rows,
     std::vector<uint32_t> packed;
 
     for (std::size_t learner = 0; learner < 4u; learner++) {
-        packOneLearner(input_interleaved, rows, cols, learner, packed);
+        packOneLearner(input_interleaved, rows, cols, 4u, learner, packed);
+        std::copy(packed.begin(), packed.end(), outputs[learner]);
+    }
+}
+
+void packInterleavedLearners2(std::size_t rows,
+                              std::size_t cols,
+                              const int8_t* input_interleaved,
+                              uint32_t* const outputs[2]) {
+    std::vector<uint32_t> packed;
+
+    for (std::size_t learner = 0; learner < 2u; learner++) {
+        packOneLearner(input_interleaved, rows, cols, 2u, learner, packed);
         std::copy(packed.begin(), packed.end(), outputs[learner]);
     }
 }
@@ -73,7 +102,17 @@ void packInterleavedLearner4(std::size_t rows,
                              std::size_t learner,
                              uint32_t* output) {
     std::vector<uint32_t> packed;
-    packOneLearner(input_interleaved, rows, cols, learner, packed);
+    packOneLearner(input_interleaved, rows, cols, 4u, learner, packed);
+    std::copy(packed.begin(), packed.end(), output);
+}
+
+void packInterleavedLearner2(std::size_t rows,
+                             std::size_t cols,
+                             const int8_t* input_interleaved,
+                             std::size_t learner,
+                             uint32_t* output) {
+    std::vector<uint32_t> packed;
+    packOneLearner(input_interleaved, rows, cols, 2u, learner, packed);
     std::copy(packed.begin(), packed.end(), output);
 }
 
@@ -88,7 +127,23 @@ void dumpInterleavedLearnerMatrices4(const std::string dump_dirs[4],
         if (dump_dirs[learner].empty()) {
             continue;
         }
-        packOneLearner(input_interleaved, rows, cols, learner, packed);
+        packOneLearner(input_interleaved, rows, cols, 4u, learner, packed);
+        dumpPackedMatrixIfEnabled(dump_dirs[learner], filename, packed.data(), rows, cols);
+    }
+}
+
+void dumpInterleavedLearnerMatrices2(const std::string dump_dirs[2],
+                                     const std::string& filename,
+                                     const int8_t* input_interleaved,
+                                     std::size_t rows,
+                                     std::size_t cols) {
+    std::vector<uint32_t> packed;
+
+    for (std::size_t learner = 0; learner < 2u; learner++) {
+        if (dump_dirs[learner].empty()) {
+            continue;
+        }
+        packOneLearner(input_interleaved, rows, cols, 2u, learner, packed);
         dumpPackedMatrixIfEnabled(dump_dirs[learner], filename, packed.data(), rows, cols);
     }
 }
@@ -102,6 +157,21 @@ void transposeInterleavedRowsToCols4(const int8_t* input_interleaved,
             const int8_t* in_slot = input_interleaved + ((row * cols + col) * 4u);
             int8_t* out_slot = output_interleaved + ((col * rows + row) * 4u);
             for (std::size_t learner = 0; learner < 4u; learner++) {
+                out_slot[learner] = in_slot[learner];
+            }
+        }
+    }
+}
+
+void transposeInterleavedRowsToCols2(const int8_t* input_interleaved,
+                                     int8_t* output_interleaved,
+                                     std::size_t rows,
+                                     std::size_t cols) {
+    for (std::size_t row = 0; row < rows; row++) {
+        for (std::size_t col = 0; col < cols; col++) {
+            const int8_t* in_slot = input_interleaved + ((row * cols + col) * 2u);
+            int8_t* out_slot = output_interleaved + ((col * rows + row) * 2u);
+            for (std::size_t learner = 0; learner < 2u; learner++) {
                 out_slot[learner] = in_slot[learner];
             }
         }
@@ -160,6 +230,58 @@ void matmulInterleaved4DToInt8(const int8_t* lhs_interleaved,
     }
 }
 
+void matmulInterleaved2DToInt8(const int8_t* lhs_interleaved,
+                               const int8_t* rhs_by_col_interleaved,
+                               std::size_t lhs_rows,
+                               std::size_t rhs_cols,
+                               std::size_t k_elems,
+                               int8_t* output_interleaved) {
+    const std::size_t total_out = lhs_rows * rhs_cols * 2u;
+    std::vector<int32_t> output_acc(total_out, 0);
+
+#if CFG_SIMD
+    std::vector<int32_t> lhs_i32(lhs_rows * k_elems * 2u);
+    std::vector<int32_t> rhs_i32(rhs_cols * k_elems * 2u);
+
+    for (std::size_t idx = 0; idx < lhs_i32.size(); idx++) {
+        lhs_i32[idx] = static_cast<int32_t>(lhs_interleaved[idx]);
+    }
+    for (std::size_t idx = 0; idx < rhs_i32.size(); idx++) {
+        rhs_i32[idx] = static_cast<int32_t>(rhs_by_col_interleaved[idx]);
+    }
+
+    sve_gemm_dense_int8_interleaved_2D(
+        lhs_i32.data(),
+        rhs_i32.data(),
+        static_cast<uint32_t>(lhs_rows),
+        static_cast<uint32_t>(rhs_cols),
+        static_cast<uint32_t>(k_elems),
+        output_acc.data());
+#else
+    for (std::size_t row = 0; row < lhs_rows; row++) {
+        for (std::size_t col = 0; col < rhs_cols; col++) {
+            int32_t acc[2] = {0, 0};
+            for (std::size_t k = 0; k < k_elems; k++) {
+                const int8_t* lhs_slot = lhs_interleaved + ((row * k_elems + k) * 2u);
+                const int8_t* rhs_slot = rhs_by_col_interleaved + ((col * k_elems + k) * 2u);
+                for (std::size_t learner = 0; learner < 2u; learner++) {
+                    acc[learner] += static_cast<int32_t>(lhs_slot[learner]) *
+                                    static_cast<int32_t>(rhs_slot[learner]);
+                }
+            }
+            int32_t* out_slot = output_acc.data() + ((row * rhs_cols + col) * 2u);
+            for (std::size_t learner = 0; learner < 2u; learner++) {
+                out_slot[learner] = acc[learner];
+            }
+        }
+    }
+#endif
+
+    for (std::size_t idx = 0; idx < total_out; idx++) {
+        output_interleaved[idx] = static_cast<int8_t>(output_acc[idx]);
+    }
+}
+
 void copyHeadToMultiheadInterleaved4D(const int8_t* head_interleaved,
                                       int8_t* multihead_interleaved,
                                       std::size_t seq_len,
@@ -176,6 +298,28 @@ void copyHeadToMultiheadInterleaved4D(const int8_t* head_interleaved,
             int8_t* out_slot =
                 multihead_interleaved + ((seq * multihead_cols + head_col_base + feature) * 4u);
             for (std::size_t learner = 0; learner < 4u; learner++) {
+                out_slot[learner] = in_slot[learner];
+            }
+        }
+    }
+}
+
+void copyHeadToMultiheadInterleaved2D(const int8_t* head_interleaved,
+                                      int8_t* multihead_interleaved,
+                                      std::size_t seq_len,
+                                      std::size_t head_idx,
+                                      std::size_t head_hidden_size,
+                                      std::size_t num_heads) {
+    const std::size_t multihead_cols = num_heads * head_hidden_size;
+    const std::size_t head_col_base = head_idx * head_hidden_size;
+
+    for (std::size_t seq = 0; seq < seq_len; seq++) {
+        for (std::size_t feature = 0; feature < head_hidden_size; feature++) {
+            const int8_t* in_slot =
+                head_interleaved + ((seq * head_hidden_size + feature) * 2u);
+            int8_t* out_slot =
+                multihead_interleaved + ((seq * multihead_cols + head_col_base + feature) * 2u);
+            for (std::size_t learner = 0; learner < 2u; learner++) {
                 out_slot[learner] = in_slot[learner];
             }
         }

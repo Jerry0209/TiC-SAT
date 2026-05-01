@@ -756,3 +756,36 @@ void sve_gemm_dense_int8_interleaved_4D(
         }
     }
 }
+
+void sve_gemm_dense_int8_interleaved_2D(
+    const int32_t *lhs_interleaved,
+    const int32_t *rhs_by_col_interleaved,
+    uint32_t lhs_rows,
+    uint32_t rhs_cols,
+    uint32_t k_elems,
+    int32_t *out_interleaved) {
+    const uint32_t n_lanes = (uint32_t)svcntw();
+
+    for (uint32_t row = 0; row < lhs_rows; row++) {
+        const int32_t *lhs_row = &lhs_interleaved[row * k_elems * 2u];
+
+        for (uint32_t col = 0; col < rhs_cols; col++) {
+            const int32_t *rhs_col = &rhs_by_col_interleaved[col * k_elems * 2u];
+            svint32_t acc_v0 = svdup_s32(0);
+            svint32_t acc_v1 = svdup_s32(0);
+
+            for (uint32_t k = 0; k < k_elems; k += n_lanes) {
+                svbool_t pg = svwhilelt_b32((uint64_t)k, (uint64_t)k_elems);
+                svint32x2_t lhs_vals = svld2_s32(pg, &lhs_row[k * 2u]);
+                svint32x2_t rhs_vals = svld2_s32(pg, &rhs_col[k * 2u]);
+
+                acc_v0 = svmla_s32_m(pg, acc_v0, svget2_s32(lhs_vals, 0), svget2_s32(rhs_vals, 0));
+                acc_v1 = svmla_s32_m(pg, acc_v1, svget2_s32(lhs_vals, 1), svget2_s32(rhs_vals, 1));
+            }
+
+            int32_t *out_slot = &out_interleaved[(row * rhs_cols + col) * 2u];
+            out_slot[0] = svaddv_s32(svptrue_b32(), acc_v0);
+            out_slot[1] = svaddv_s32(svptrue_b32(), acc_v1);
+        }
+    }
+}

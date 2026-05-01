@@ -38,6 +38,9 @@ public:
     void computeInterleaved2DSameSeq(std::size_t seq_len,
                                      uint32_t* const inputs[2],
                                      uint32_t* const outputs[2]) const;
+    void computeInterleaved2DToInt8(std::size_t seq_len,
+                                    const int8_t* input_interleaved,
+                                    int8_t* output_interleaved) const;
     bool supportsInterleaved4DDiffSeq() const;
     void computeInterleaved4DDiffSeq(std::size_t seq_len,
                                      uint32_t* const inputs[4],

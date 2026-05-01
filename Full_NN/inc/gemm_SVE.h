@@ -83,6 +83,14 @@ void sve_gemm_dense_int8_interleaved_4D(
     uint32_t k_elems,
     int32_t *out_interleaved);
 
+void sve_gemm_dense_int8_interleaved_2D(
+    const int32_t *lhs_interleaved,
+    const int32_t *rhs_by_col_interleaved,
+    uint32_t lhs_rows,
+    uint32_t rhs_cols,
+    uint32_t k_elems,
+    int32_t *out_interleaved);
+
 #ifdef __cplusplus
 }
 #endif
