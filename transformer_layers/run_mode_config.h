@@ -88,6 +88,14 @@
 #define CFG_SIMD 0
 #endif
 
+// Keep the whole 4-learner transformer block in [seq][feature][learner]
+// layout between grouped CodebookDense, attention, softmax, AddNorm, and FFN.
+#ifdef FULL_INTERLEAVED_PIPELINE
+#define CFG_FULL_INTERLEAVED_PIPELINE 1
+#else
+#define CFG_FULL_INTERLEAVED_PIPELINE 0
+#endif
+
 #if CFG_PROFILE_GEMM_ONLY
 #undef CFG_USE_CODEBOOK_REFERENCE
 #define CFG_USE_CODEBOOK_REFERENCE 0
@@ -120,6 +128,14 @@
 // Reference comparison only makes sense when codebook GEMM is enabled.
 #if CFG_USE_CODEBOOK_REFERENCE && !CFG_USE_CODEBOOK_GEMM
 #error "ENABLE_CODEBOOK_REFERENCE requires USE_CODEBOOK_GEMM."
+#endif
+
+#if CFG_FULL_INTERLEAVED_PIPELINE && !CFG_USE_CODEBOOK_GEMM
+#error "FULL_INTERLEAVED_PIPELINE requires USE_CODEBOOK_GEMM."
+#endif
+
+#if CFG_FULL_INTERLEAVED_PIPELINE && !CFG_SIMD
+#error "FULL_INTERLEAVED_PIPELINE requires SIMD_FLAG=1."
 #endif
 
 

@@ -75,6 +75,14 @@ void sve_gemm_row_compact_int8_interleaved_4D_same_seq(
     int accumulate,
     uint8_t bits_per_cb);
 
+void sve_gemm_dense_int8_interleaved_4D(
+    const int32_t *lhs_interleaved,
+    const int32_t *rhs_by_col_interleaved,
+    uint32_t lhs_rows,
+    uint32_t rhs_cols,
+    uint32_t k_elems,
+    int32_t *out_interleaved);
+
 #ifdef __cplusplus
 }
 #endif

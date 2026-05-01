@@ -10,6 +10,7 @@ class AddNormalize{
 public:
     AddNormalize(std::size_t, std::size_t, std::size_t, std::size_t);
     void compute(uint32_t *input, uint32_t *output);
+    void computeInterleaved4D(int8_t *input_interleaved, int8_t *output_interleaved);
     void computeRearranged(uint32_t *input, uint32_t *output);
 private:
     std::size_t seq_len_;

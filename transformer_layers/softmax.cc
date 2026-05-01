@@ -36,6 +36,38 @@ void Softmax::compute(uint32_t *input, std::size_t seq_len){
     }
 }
 
+void Softmax::computeInterleaved4D(int8_t *input, std::size_t seq_len) {
+    auto* input_u8 = reinterpret_cast<uint8_t*>(input);
+    for (std::size_t query = 0; query < seq_len; query++) {
+        uint32_t sum[4] = {0, 0, 0, 0};
+
+        for (std::size_t key = 0; key < seq_len; key++) {
+            uint8_t* slot = input_u8 + ((query * seq_len + key) * 4u);
+            for (std::size_t learner = 0; learner < 4u; learner++) {
+                slot[learner] = lookup[slot[learner] >> 3];
+                sum[learner] += slot[learner];
+            }
+        }
+
+        for (std::size_t learner = 0; learner < 4u; learner++) {
+            if (sum[learner] == 0u) {
+                sum[learner] = 1u;
+            }
+        }
+
+        for (std::size_t key = 0; key < seq_len; key++) {
+            uint8_t* slot = input_u8 + ((query * seq_len + key) * 4u);
+            for (std::size_t learner = 0; learner < 4u; learner++) {
+                uint32_t denom = sum[learner] >> 8;
+                if (denom == 0u) {
+                    denom = 1u;
+                }
+                slot[learner] = static_cast<uint8_t>(slot[learner] / denom);
+            }
+        }
+    }
+}
+
 void Softmax::computeRearranged(uint32_t *input, std::size_t seq_len, std::size_t kernelDim) {
     // We assume that the input value are fixed-point with 2 bits of fraction.
     for (int i =0; i< seq_len; i++){
@@ -64,6 +96,12 @@ void Softmax::post_softmax(uint32_t *input, std::size_t seq_len, std::size_t hea
     for (int i =0; i< seq_len * headSize; i++){
         *input_ptr = (int8_t) (*(input_ptr) >> 6);
         input_ptr++;
+    }
+}
+
+void Softmax::post_softmax_interleaved4D(int8_t *input, std::size_t seq_len, std::size_t headSize) {
+    for (std::size_t idx = 0; idx < seq_len * headSize * 4u; idx++) {
+        input[idx] = static_cast<int8_t>(input[idx] >> 6);
     }
 }
 
@@ -132,4 +170,3 @@ void Softmax::softmax_fixed(std::vector<int32_t> &input, int32_t fractional_bits
         }
     }
 }
-

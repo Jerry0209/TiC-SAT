@@ -42,6 +42,9 @@ public:
     void computeInterleaved4DDiffSeq(std::size_t seq_len,
                                      uint32_t* const inputs[4],
                                      uint32_t* const outputs[4]) const;
+    void computeInterleaved4DToInt8(std::size_t seq_len,
+                                    const int8_t* input_interleaved,
+                                    int8_t* output_interleaved) const;
 
 private:
     static uint32_t getPackedIndex(const uint32_t *packed_row,

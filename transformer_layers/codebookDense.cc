@@ -543,6 +543,68 @@ void CodebookDense::computeInterleaved4DDiffSeq(std::size_t seq_len,
     }
 }
 
+void CodebookDense::computeInterleaved4DToInt8(std::size_t seq_len,
+                                               const int8_t* input_interleaved,
+                                               int8_t* output_interleaved) const {
+    if (!supportsInterleaved4DDiffSeq()) {
+        throw std::runtime_error("CodebookDense interleaved 4D pipeline path is not available");
+    }
+
+    std::vector<int32_t> output_acc_interleaved(seq_len * output_size_ * 4u, 0);
+
+    gemm_t layer;
+    layer.seq_len = static_cast<uint16_t>(seq_len);
+    layer.input_size = static_cast<uint16_t>(input_size_);
+    layer.output_size = static_cast<uint16_t>(output_size_);
+    layer.n_words_row = static_cast<uint16_t>(n_words_row_);
+
+#ifdef SIMD
+    if (same_seq_) {
+        gemm_exec_compact_int_sve_interleaved_4D_same_seq(
+            layer,
+            input_interleaved,
+            weight_idx_,
+            codebook_interleaved_q_.data(),
+            bias_interleaved_q_.empty() ? nullptr : bias_interleaved_q_.data(),
+            output_acc_interleaved.data(),
+            bits_per_cb_);
+    } else {
+        gemm_exec_compact_int_sve_interleaved_4D_diff_seq(
+            layer,
+            input_interleaved,
+            weight_idx_interleaved_,
+            codebook_interleaved_q_.data(),
+            bias_interleaved_q_.empty() ? nullptr : bias_interleaved_q_.data(),
+            output_acc_interleaved.data(),
+            bits_per_cb_);
+    }
+#else
+    if (same_seq_) {
+        gemm_exec_compact_int_interleaved_4D_same_seq(
+            layer,
+            input_interleaved,
+            weight_idx_,
+            codebook_interleaved_q_.data(),
+            bias_interleaved_q_.empty() ? nullptr : bias_interleaved_q_.data(),
+            output_acc_interleaved.data(),
+            bits_per_cb_);
+    } else {
+        gemm_exec_compact_int_interleaved_4D_diff_seq(
+            layer,
+            input_interleaved,
+            weight_idx_interleaved_,
+            codebook_interleaved_q_.data(),
+            bias_interleaved_q_.empty() ? nullptr : bias_interleaved_q_.data(),
+            output_acc_interleaved.data(),
+            bits_per_cb_);
+    }
+#endif
+
+    for (std::size_t idx = 0; idx < output_acc_interleaved.size(); idx++) {
+        output_interleaved[idx] = static_cast<int8_t>(output_acc_interleaved[idx]);
+    }
+}
+
 
 /**
  * @brief Public inference entry point for the dense layer.

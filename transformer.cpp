@@ -149,6 +149,7 @@ void test() {
     std::cout << "CFG_USE_CODEBOOK_REFERENCE = " << CFG_USE_CODEBOOK_REFERENCE << std::endl;
     std::cout << "CFG_ENABLE_DEBUG_PRINT = " << CFG_ENABLE_DEBUG_PRINT << std::endl;
     std::cout << "CFG_PROFILE_GEMM_ONLY = " << CFG_PROFILE_GEMM_ONLY << std::endl;
+    std::cout << "CFG_FULL_INTERLEAVED_PIPELINE = " << CFG_FULL_INTERLEAVED_PIPELINE << std::endl;
     std::cout << "CFG_SIMD = " << CFG_SIMD << std::endl;
     
     

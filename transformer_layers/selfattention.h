@@ -36,6 +36,10 @@ public:
                               SingleHeadSelfAttn* heads[4],
                               uint32_t* const inputs[4],
                               uint32_t* const outputs[4]);
+    static void computeInterleaved4D(std::size_t seq_len,
+                                     SingleHeadSelfAttn* heads[4],
+                                     const int8_t* input_interleaved,
+                                     int8_t* output_interleaved);
 
 private:
     template <std::size_t LearnerCount>

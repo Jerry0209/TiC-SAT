@@ -12,6 +12,8 @@
 
 #include "layerFactory.h"
 #include "run_mode_config.h"
+#include "codebookDense.h"
+#include "interleavedPipeline.h"
 
 
 namespace {
@@ -22,6 +24,143 @@ void runM5IfAvailable(const char* command) {
         std::system(command);
     }
 }
+
+#if CFG_FULL_INTERLEAVED_PIPELINE
+CodebookDense* requireInterleavedCodebookDense4(const char* label,
+                                                LinearLayer* const layers[4]) {
+    auto* primary = dynamic_cast<CodebookDense*>(layers[0]);
+    if (primary == nullptr || !primary->supportsInterleaved4DDiffSeq()) {
+        throw std::runtime_error(std::string(label) + " does not support the 4D interleaved pipeline");
+    }
+
+    for (std::size_t learner = 1; learner < 4u; learner++) {
+        auto* layer = dynamic_cast<CodebookDense*>(layers[learner]);
+        if (layer == nullptr || !layer->supportsInterleaved4DDiffSeq()) {
+            throw std::runtime_error(std::string(label) + " learner layer does not support the 4D interleaved pipeline");
+        }
+    }
+
+    return primary;
+}
+
+void computeCodebookDenseInterleaved4D(const char* label,
+                                       LinearLayer* const layers[4],
+                                       std::size_t seq_len,
+                                       const int8_t* input_interleaved,
+                                       int8_t* output_interleaved) {
+    CodebookDense* primary = requireInterleavedCodebookDense4(label, layers);
+    primary->computeInterleaved4DToInt8(seq_len, input_interleaved, output_interleaved);
+}
+
+#if CFG_ENABLE_DEBUG_PRINT
+void printInterleavedPackedPreview4D(const char* label,
+                                     const int8_t* input_interleaved,
+                                     std::size_t rows,
+                                     std::size_t cols,
+                                     std::size_t learner) {
+    std::vector<uint32_t> packed((rows * cols) >> 2, 0u);
+    packInterleavedLearner4(rows, cols, input_interleaved, learner, packed.data());
+    printPackedPreview(label, packed.data(), packed.size());
+}
+#endif
+
+#if CFG_USE_CODEBOOK_REFERENCE
+void compareInterleavedDenseReference4D(const char* label,
+                                        LinearLayer* const references[4],
+                                        uint32_t* const reference_outputs[4],
+                                        const std::size_t learner_ids[4],
+                                        std::size_t seq_len,
+                                        std::size_t input_cols,
+                                        std::size_t output_cols,
+                                        const int8_t* input_interleaved,
+                                        const int8_t* candidate_interleaved) {
+    std::vector<uint32_t> packed_input((seq_len * input_cols) >> 2, 0u);
+    std::vector<uint32_t> packed_candidate((seq_len * output_cols) >> 2, 0u);
+
+    for (std::size_t learner = 0; learner < 4u; learner++) {
+        std::fill(reference_outputs[learner],
+                  reference_outputs[learner] + ((seq_len * output_cols) >> 2),
+                  0u);
+        std::fill(packed_input.begin(), packed_input.end(), 0u);
+        std::fill(packed_candidate.begin(), packed_candidate.end(), 0u);
+
+        packInterleavedLearner4(
+            seq_len,
+            input_cols,
+            input_interleaved,
+            learner,
+            packed_input.data());
+        packInterleavedLearner4(
+            seq_len,
+            output_cols,
+            candidate_interleaved,
+            learner,
+            packed_candidate.data());
+
+        references[learner]->compute(
+            seq_len,
+            packed_input.data(),
+            reference_outputs[learner]);
+
+        const std::string learner_label =
+            std::string(label) + "_learner" + std::to_string(learner_ids[learner]);
+        comparePackedBuffers(
+            learner_label.c_str(),
+            reference_outputs[learner],
+            packed_candidate.data(),
+            (seq_len * output_cols) >> 2);
+    }
+}
+
+void compareInterleavedAddNormReference4D(const char* label,
+                                          AddNormalize* add_norm,
+                                          const std::size_t learner_ids[4],
+                                          std::size_t seq_len,
+                                          std::size_t cols,
+                                          const int8_t* residual_interleaved,
+                                          const int8_t* pre_addnorm_interleaved,
+                                          const int8_t* candidate_interleaved) {
+    std::vector<uint32_t> packed_residual((seq_len * cols) >> 2, 0u);
+    std::vector<uint32_t> packed_reference((seq_len * cols) >> 2, 0u);
+    std::vector<uint32_t> packed_candidate((seq_len * cols) >> 2, 0u);
+
+    for (std::size_t learner = 0; learner < 4u; learner++) {
+        std::fill(packed_residual.begin(), packed_residual.end(), 0u);
+        std::fill(packed_reference.begin(), packed_reference.end(), 0u);
+        std::fill(packed_candidate.begin(), packed_candidate.end(), 0u);
+
+        packInterleavedLearner4(
+            seq_len,
+            cols,
+            residual_interleaved,
+            learner,
+            packed_residual.data());
+        packInterleavedLearner4(
+            seq_len,
+            cols,
+            pre_addnorm_interleaved,
+            learner,
+            packed_reference.data());
+        packInterleavedLearner4(
+            seq_len,
+            cols,
+            candidate_interleaved,
+            learner,
+            packed_candidate.data());
+
+        add_norm->compute(packed_residual.data(), packed_reference.data());
+
+        const std::string learner_label =
+            std::string(label) + "_learner" + std::to_string(learner_ids[learner]);
+        comparePackedBuffers(
+            learner_label.c_str(),
+            packed_reference.data(),
+            packed_candidate.data(),
+            (seq_len * cols) >> 2);
+    }
+}
+#endif
+#endif
 
 } // namespace
 
@@ -351,6 +490,13 @@ void TransformerBlock::computeGroupImpl(std::size_t seq_len,
     static_assert(LearnerCount == 2u || LearnerCount == 4u,
                   "Only 2- and 4-learner grouped transformer execution is supported");
 
+#if CFG_FULL_INTERLEAVED_PIPELINE
+    if constexpr (LearnerCount == 4u) {
+        computeGroup4FullInterleaved(seq_len, blocks, inputs, outputs);
+        return;
+    }
+#endif
+
     runM5IfAvailable("m5 resetstats");
 
     for (std::size_t n = 0; n < blocks[0]->num_heads_; ++n) {
@@ -621,6 +767,272 @@ void TransformerBlock::computeGroupImpl(std::size_t seq_len,
 
     runM5IfAvailable("m5 dumpresetstats");
 }
+
+#if CFG_FULL_INTERLEAVED_PIPELINE
+void TransformerBlock::computeGroup4FullInterleaved(std::size_t seq_len,
+                                                    TransformerBlock* blocks[4],
+                                                    uint32_t* const inputs[4],
+                                                    uint32_t* const outputs[4]) {
+    runM5IfAvailable("m5 resetstats");
+
+    std::string dump_dirs[4];
+    std::size_t learner_ids[4];
+    for (std::size_t learner = 0; learner < 4u; learner++) {
+        dump_dirs[learner] = blocks[learner]->dump_dir_;
+        learner_ids[learner] = blocks[learner]->learner_idx_;
+    }
+
+    const std::size_t input_dim = blocks[0]->input_dim_;
+    const std::size_t head_hidden_size = blocks[0]->head_hidden_size_;
+    const std::size_t num_heads = blocks[0]->num_heads_;
+    const std::size_t ff_size = blocks[0]->ff_size_;
+
+    std::vector<int8_t> input_interleaved(seq_len * input_dim * 4u, 0);
+    interleavePackedLearners4(seq_len, input_dim, inputs, input_interleaved.data());
+
+    std::vector<int8_t> multihead_interleaved(
+        seq_len * num_heads * head_hidden_size * 4u, 0);
+    std::vector<int8_t> head_out_interleaved(
+        seq_len * head_hidden_size * 4u, 0);
+
+    for (std::size_t head_idx = 0; head_idx < num_heads; head_idx++) {
+        std::cout << "Head : " << head_idx << std::endl;
+
+        SingleHeadSelfAttn* heads[4];
+        for (std::size_t learner = 0; learner < 4u; learner++) {
+            heads[learner] = blocks[learner]->selfatten_[head_idx];
+        }
+
+        std::fill(head_out_interleaved.begin(), head_out_interleaved.end(), 0);
+        SingleHeadSelfAttn::computeInterleaved4D(
+            seq_len,
+            heads,
+            input_interleaved.data(),
+            head_out_interleaved.data());
+
+        copyHeadToMultiheadInterleaved4D(
+            head_out_interleaved.data(),
+            multihead_interleaved.data(),
+            seq_len,
+            head_idx,
+            head_hidden_size,
+            num_heads);
+    }
+
+    dumpInterleavedLearnerMatrices4(
+        dump_dirs,
+        "multihead_out.txt",
+        multihead_interleaved.data(),
+        seq_len,
+        num_heads * head_hidden_size);
+
+    std::cout << "Condense" << std::endl;
+    LinearLayer* condense_layers[4];
+    for (std::size_t learner = 0; learner < 4u; learner++) {
+        condense_layers[learner] = blocks[learner]->condense;
+    }
+
+    std::vector<int8_t> condense_interleaved(seq_len * input_dim * 4u, 0);
+    computeCodebookDenseInterleaved4D(
+        "condense",
+        condense_layers,
+        seq_len,
+        multihead_interleaved.data(),
+        condense_interleaved.data());
+
+#if CFG_USE_CODEBOOK_REFERENCE
+    LinearLayer* condense_references[4];
+    uint32_t* condense_reference_outputs[4];
+    for (std::size_t learner = 0; learner < 4u; learner++) {
+        condense_references[learner] = blocks[learner]->condenseReference;
+        condense_reference_outputs[learner] = blocks[learner]->referenceCondense;
+    }
+    compareInterleavedDenseReference4D(
+        "condense_out",
+        condense_references,
+        condense_reference_outputs,
+        learner_ids,
+        seq_len,
+        num_heads * head_hidden_size,
+        input_dim,
+        multihead_interleaved.data(),
+        condense_interleaved.data());
+#endif
+
+    dumpInterleavedLearnerMatrices4(
+        dump_dirs,
+        "condense_out.txt",
+        condense_interleaved.data(),
+        seq_len,
+        input_dim);
+
+    std::cout << "Add Norm" << std::endl;
+#if CFG_USE_CODEBOOK_REFERENCE
+    std::vector<int8_t> condense_before_addnorm_interleaved = condense_interleaved;
+#endif
+    blocks[0]->addNorm->computeInterleaved4D(
+        input_interleaved.data(),
+        condense_interleaved.data());
+
+#if CFG_USE_CODEBOOK_REFERENCE
+    compareInterleavedAddNormReference4D(
+        "condense_out_after_addnorm",
+        blocks[0]->addNorm,
+        learner_ids,
+        seq_len,
+        input_dim,
+        input_interleaved.data(),
+        condense_before_addnorm_interleaved.data(),
+        condense_interleaved.data());
+#endif
+
+    dumpInterleavedLearnerMatrices4(
+        dump_dirs,
+        "after_attn_addnorm.txt",
+        condense_interleaved.data(),
+        seq_len,
+        input_dim);
+
+    runM5IfAvailable("m5 dumpresetstats");
+
+    std::cout << "Feed Forward 0" << std::endl;
+    LinearLayer* ff0_layers[4];
+    for (std::size_t learner = 0; learner < 4u; learner++) {
+        ff0_layers[learner] = blocks[learner]->feedForward0;
+    }
+
+    std::vector<int8_t> ff0_interleaved(seq_len * ff_size * 4u, 0);
+    computeCodebookDenseInterleaved4D(
+        "ff0",
+        ff0_layers,
+        seq_len,
+        condense_interleaved.data(),
+        ff0_interleaved.data());
+
+#if CFG_ENABLE_DEBUG_PRINT
+    for (std::size_t learner = 0; learner < 4u; learner++) {
+        const std::string ff0_label =
+            "ffn0_learner" + std::to_string(blocks[learner]->learner_idx_);
+        printInterleavedPackedPreview4D(
+            ff0_label.c_str(),
+            ff0_interleaved.data(),
+            seq_len,
+            ff_size,
+            learner);
+    }
+#endif
+
+#if CFG_USE_CODEBOOK_REFERENCE
+    LinearLayer* ff0_references[4];
+    uint32_t* ff0_reference_outputs[4];
+    for (std::size_t learner = 0; learner < 4u; learner++) {
+        ff0_references[learner] = blocks[learner]->feedForward0Reference;
+        ff0_reference_outputs[learner] = blocks[learner]->referenceFF0;
+    }
+    compareInterleavedDenseReference4D(
+        "ffn0",
+        ff0_references,
+        ff0_reference_outputs,
+        learner_ids,
+        seq_len,
+        input_dim,
+        ff_size,
+        condense_interleaved.data(),
+        ff0_interleaved.data());
+#endif
+
+    dumpInterleavedLearnerMatrices4(
+        dump_dirs,
+        "ff0_out.txt",
+        ff0_interleaved.data(),
+        seq_len,
+        ff_size);
+
+    std::cout << "Feed Forward 1" << std::endl;
+    LinearLayer* ff1_layers[4];
+    for (std::size_t learner = 0; learner < 4u; learner++) {
+        ff1_layers[learner] = blocks[learner]->feedForward1;
+    }
+
+    std::vector<int8_t> ff1_interleaved(seq_len * input_dim * 4u, 0);
+    computeCodebookDenseInterleaved4D(
+        "ff1",
+        ff1_layers,
+        seq_len,
+        ff0_interleaved.data(),
+        ff1_interleaved.data());
+
+#if CFG_ENABLE_DEBUG_PRINT
+    for (std::size_t learner = 0; learner < 4u; learner++) {
+        const std::string ff1_label =
+            "ffn1_pre_addnorm_learner" + std::to_string(blocks[learner]->learner_idx_);
+        printInterleavedPackedPreview4D(
+            ff1_label.c_str(),
+            ff1_interleaved.data(),
+            seq_len,
+            input_dim,
+            learner);
+    }
+#endif
+
+#if CFG_USE_CODEBOOK_REFERENCE
+    LinearLayer* ff1_references[4];
+    uint32_t* ff1_reference_outputs[4];
+    for (std::size_t learner = 0; learner < 4u; learner++) {
+        ff1_references[learner] = blocks[learner]->feedForward1Reference;
+        ff1_reference_outputs[learner] = blocks[learner]->referenceFF1;
+    }
+    compareInterleavedDenseReference4D(
+        "ffn1_pre_addnorm",
+        ff1_references,
+        ff1_reference_outputs,
+        learner_ids,
+        seq_len,
+        ff_size,
+        input_dim,
+        ff0_interleaved.data(),
+        ff1_interleaved.data());
+#endif
+
+    dumpInterleavedLearnerMatrices4(
+        dump_dirs,
+        "ff1_out.txt",
+        ff1_interleaved.data(),
+        seq_len,
+        input_dim);
+
+    std::cout << "Add Norm" << std::endl;
+#if CFG_USE_CODEBOOK_REFERENCE
+    std::vector<int8_t> ff1_before_addnorm_interleaved = ff1_interleaved;
+#endif
+    blocks[0]->addNorm->computeInterleaved4D(
+        condense_interleaved.data(),
+        ff1_interleaved.data());
+
+#if CFG_USE_CODEBOOK_REFERENCE
+    compareInterleavedAddNormReference4D(
+        "final_output_after_addnorm",
+        blocks[0]->addNorm,
+        learner_ids,
+        seq_len,
+        input_dim,
+        condense_interleaved.data(),
+        ff1_before_addnorm_interleaved.data(),
+        ff1_interleaved.data());
+#endif
+
+    dumpInterleavedLearnerMatrices4(
+        dump_dirs,
+        "final_out.txt",
+        ff1_interleaved.data(),
+        seq_len,
+        input_dim);
+
+    packInterleavedLearners4(seq_len, input_dim, ff1_interleaved.data(), outputs);
+
+    runM5IfAvailable("m5 dumpresetstats");
+}
+#endif
 
 void TransformerBlock::computeGroup2(std::size_t seq_len,
                                      TransformerBlock* blocks[2],

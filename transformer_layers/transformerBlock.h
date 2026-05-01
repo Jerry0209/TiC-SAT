@@ -46,6 +46,13 @@ private:
                                  uint32_t* const* inputs,
                                  uint32_t* const* outputs);
 
+#if CFG_FULL_INTERLEAVED_PIPELINE
+    static void computeGroup4FullInterleaved(std::size_t seq_len,
+                                             TransformerBlock* blocks[4],
+                                             uint32_t* const inputs[4],
+                                             uint32_t* const outputs[4]);
+#endif
+
     std::size_t num_heads_;
     std::size_t head_hidden_size_;
     std::size_t input_dim_;

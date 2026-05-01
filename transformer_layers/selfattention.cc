@@ -9,6 +9,41 @@
 #include "debuggerFunctions.h"
 
 #include "layerFactory.h"
+#include "codebookDense.h"
+#include "interleavedPipeline.h"
+
+#include <stdexcept>
+#include <vector>
+
+namespace {
+
+CodebookDense* requireInterleavedCodebookDense4(const char* label,
+                                                LinearLayer* const layers[4]) {
+    auto* primary = dynamic_cast<CodebookDense*>(layers[0]);
+    if (primary == nullptr || !primary->supportsInterleaved4DDiffSeq()) {
+        throw std::runtime_error(std::string(label) + " does not support the 4D interleaved pipeline");
+    }
+
+    for (std::size_t learner = 1; learner < 4u; learner++) {
+        auto* layer = dynamic_cast<CodebookDense*>(layers[learner]);
+        if (layer == nullptr || !layer->supportsInterleaved4DDiffSeq()) {
+            throw std::runtime_error(std::string(label) + " learner layer does not support the 4D interleaved pipeline");
+        }
+    }
+
+    return primary;
+}
+
+void computeCodebookDenseInterleaved4D(const char* label,
+                                       LinearLayer* const layers[4],
+                                       std::size_t seq_len,
+                                       const int8_t* input_interleaved,
+                                       int8_t* output_interleaved) {
+    CodebookDense* primary = requireInterleavedCodebookDense4(label, layers);
+    primary->computeInterleaved4DToInt8(seq_len, input_interleaved, output_interleaved);
+}
+
+} // namespace
 
 // SingleHeadSelfAttn::SingleHeadSelfAttn(std::size_t pre_seq_len, std::size_t input_dim, std::size_t head_hidden_size,
 //                                        uint32_t **weightVector, std::size_t kernel_dim, std::size_t max_col) {
@@ -481,4 +516,140 @@ void SingleHeadSelfAttn::computeGroup4(std::size_t seq_len,
                                        uint32_t* const inputs[4],
                                        uint32_t* const outputs[4]) {
     computeGroupImpl<4u>(seq_len, heads, inputs, outputs);
+}
+
+void SingleHeadSelfAttn::computeInterleaved4D(std::size_t seq_len,
+                                              SingleHeadSelfAttn* heads[4],
+                                              const int8_t* input_interleaved,
+                                              int8_t* output_interleaved) {
+    LinearLayer* query_layers[4];
+    LinearLayer* key_layers[4];
+    LinearLayer* value_layers[4];
+    std::string dump_dirs[4];
+
+    for (std::size_t learner = 0; learner < 4u; learner++) {
+        query_layers[learner] = heads[learner]->query_layer_;
+        key_layers[learner] = heads[learner]->key_layer_;
+        value_layers[learner] = heads[learner]->value_layer_;
+        dump_dirs[learner] = heads[learner]->dump_dir_;
+    }
+
+    const std::size_t head_hidden_size = heads[0]->head_hidden_size_;
+    std::vector<int8_t> query_out(seq_len * head_hidden_size * 4u, 0);
+    std::vector<int8_t> key_out(seq_len * head_hidden_size * 4u, 0);
+    std::vector<int8_t> value_out(seq_len * head_hidden_size * 4u, 0);
+
+    computeCodebookDenseInterleaved4D("q_h", query_layers, seq_len, input_interleaved, query_out.data());
+    computeCodebookDenseInterleaved4D("k_h", key_layers, seq_len, input_interleaved, key_out.data());
+    computeCodebookDenseInterleaved4D("v_h", value_layers, seq_len, input_interleaved, value_out.data());
+
+#if CFG_USE_CODEBOOK_REFERENCE
+    std::vector<uint32_t> packed_input((seq_len * heads[0]->input_dim_) >> 2, 0u);
+    std::vector<uint32_t> packed_candidate((seq_len * head_hidden_size) >> 2, 0u);
+
+    auto compareProjection = [&](const char* prefix,
+                                 LinearLayer* reference_layer,
+                                 uint32_t* reference_output,
+                                 const int8_t* candidate_interleaved,
+                                 std::size_t learner) {
+        std::fill(reference_output,
+                  reference_output + ((seq_len * head_hidden_size) >> 2),
+                  0u);
+        std::fill(packed_input.begin(), packed_input.end(), 0u);
+        std::fill(packed_candidate.begin(), packed_candidate.end(), 0u);
+
+        packInterleavedLearner4(
+            seq_len,
+            heads[learner]->input_dim_,
+            input_interleaved,
+            learner,
+            packed_input.data());
+        packInterleavedLearner4(
+            seq_len,
+            head_hidden_size,
+            candidate_interleaved,
+            learner,
+            packed_candidate.data());
+
+        reference_layer->compute(seq_len, packed_input.data(), reference_output);
+
+        const std::string label =
+            std::string(prefix) + "_h" + std::to_string(heads[0]->head_idx_) +
+            "_learner" + std::to_string(heads[learner]->learner_idx_);
+        comparePackedBuffers(
+            label.c_str(),
+            reference_output,
+            packed_candidate.data(),
+            (seq_len * head_hidden_size) >> 2);
+    };
+
+    for (std::size_t learner = 0; learner < 4u; learner++) {
+        compareProjection("q", heads[learner]->query_reference_,
+                          heads[learner]->query_reference_out_,
+                          query_out.data(), learner);
+        compareProjection("k", heads[learner]->key_reference_,
+                          heads[learner]->key_reference_out_,
+                          key_out.data(), learner);
+        compareProjection("v", heads[learner]->value_reference_,
+                          heads[learner]->value_reference_out_,
+                          value_out.data(), learner);
+    }
+#endif
+
+    dumpInterleavedLearnerMatrices4(
+        dump_dirs,
+        "q_h" + std::to_string(heads[0]->head_idx_) + ".txt",
+        query_out.data(),
+        seq_len,
+        head_hidden_size);
+    dumpInterleavedLearnerMatrices4(
+        dump_dirs,
+        "k_h" + std::to_string(heads[0]->head_idx_) + ".txt",
+        key_out.data(),
+        seq_len,
+        head_hidden_size);
+    dumpInterleavedLearnerMatrices4(
+        dump_dirs,
+        "v_h" + std::to_string(heads[0]->head_idx_) + ".txt",
+        value_out.data(),
+        seq_len,
+        head_hidden_size);
+
+    std::vector<int8_t> attention_scores(seq_len * seq_len * 4u, 0);
+    matmulInterleaved4DToInt8(
+        query_out.data(),
+        key_out.data(),
+        seq_len,
+        seq_len,
+        head_hidden_size,
+        attention_scores.data());
+
+    heads[0]->softmax_->computeInterleaved4D(attention_scores.data(), seq_len);
+
+    std::vector<int8_t> value_by_col(head_hidden_size * seq_len * 4u, 0);
+    transposeInterleavedRowsToCols4(
+        value_out.data(),
+        value_by_col.data(),
+        seq_len,
+        head_hidden_size);
+
+    matmulInterleaved4DToInt8(
+        attention_scores.data(),
+        value_by_col.data(),
+        seq_len,
+        head_hidden_size,
+        seq_len,
+        output_interleaved);
+
+    heads[0]->softmax_->post_softmax_interleaved4D(
+        output_interleaved,
+        seq_len,
+        head_hidden_size);
+
+    dumpInterleavedLearnerMatrices4(
+        dump_dirs,
+        "head_out_h" + std::to_string(heads[0]->head_idx_) + ".txt",
+        output_interleaved,
+        seq_len,
+        head_hidden_size);
 }
