@@ -105,6 +105,15 @@
 #define CFG_FULL_INTERLEAVED_PIPELINE 0
 #endif
 
+// Run the Transformer block with float32 activations/output accumulation.
+// This is intentionally independent from USE_F16, which is kept for a future
+// half-precision implementation.
+#ifdef USE_FP32_TRANSFORMER
+#define CFG_USE_FP32_TRANSFORMER 1
+#else
+#define CFG_USE_FP32_TRANSFORMER 0
+#endif
+
 #if CFG_PROFILE_GEMM_ONLY || CFG_GEM5_PROFILE_REGIONS
 #undef CFG_USE_CODEBOOK_REFERENCE
 #define CFG_USE_CODEBOOK_REFERENCE 0
@@ -143,8 +152,16 @@
 #error "FULL_INTERLEAVED_PIPELINE requires USE_CODEBOOK_GEMM."
 #endif
 
-#if CFG_FULL_INTERLEAVED_PIPELINE && !CFG_SIMD
-#error "FULL_INTERLEAVED_PIPELINE requires SIMD_FLAG=1."
+#if CFG_FULL_INTERLEAVED_PIPELINE && !CFG_SIMD && !CFG_USE_FP32_TRANSFORMER
+#error "FULL_INTERLEAVED_PIPELINE requires SIMD_FLAG=1 for the int8 pipeline."
+#endif
+
+#if CFG_USE_FP32_TRANSFORMER && !CFG_USE_CODEBOOK_GEMM
+#error "USE_FP32_TRANSFORMER requires USE_CODEBOOK_GEMM because the default Dense path is int8-only."
+#endif
+
+#if CFG_USE_FP32_TRANSFORMER && CFG_USE_CODEBOOK_REFERENCE
+#error "USE_FP32_TRANSFORMER cannot be combined with ENABLE_CODEBOOK_REFERENCE; use the notebook FP32 comparison instead."
 #endif
 
 

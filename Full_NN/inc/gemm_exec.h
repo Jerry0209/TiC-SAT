@@ -27,6 +27,30 @@ void gemm_exec_compact(gemm_t gemm_layer,
                        float *out,
                        uint8_t bits_per_cb);
 
+void gemm_exec_compact_fp32_interleaved_2D_same_seq(gemm_t gemm_layer,
+                                                    const float *in_interleaved,
+                                                    const uint32_t *weight_idx,
+                                                    const float *codebook_interleaved,
+                                                    const float *bias_interleaved,
+                                                    float *out_interleaved,
+                                                    uint8_t bits_per_cb);
+
+void gemm_exec_compact_fp32_interleaved_4D_same_seq(gemm_t gemm_layer,
+                                                    const float *in_interleaved,
+                                                    const uint32_t *weight_idx,
+                                                    const float *codebook_interleaved,
+                                                    const float *bias_interleaved,
+                                                    float *out_interleaved,
+                                                    uint8_t bits_per_cb);
+
+void gemm_exec_compact_fp32_interleaved_4D_diff_seq(gemm_t gemm_layer,
+                                                   const float *in_interleaved,
+                                                   const uint32_t *weight_idx_interleaved,
+                                                   const float *codebook_interleaved,
+                                                   const float *bias_interleaved,
+                                                   float *out_interleaved,
+                                                   uint8_t bits_per_cb);
+
 void gemm_exec_noCB_int(gemm_t gemm_layer,
                         const int8_t *in,
                         const int8_t *weights,
@@ -66,6 +90,38 @@ void gemm_exec_compact_int_interleaved_4D_same_seq(gemm_t gemm_layer,
                                                    uint8_t bits_per_cb);
 
 #ifdef SIMD
+void gemm_exec_compact_sve(gemm_t gemm_layer,
+                           const float *in,
+                           const uint32_t *weight_idx,
+                           const float *codebook,
+                           const float *bias,
+                           float *out,
+                           uint8_t bits_per_cb);
+
+void gemm_exec_compact_sve_fp32_interleaved_2D_same_seq(gemm_t gemm_layer,
+                                                        const float *in_interleaved,
+                                                        const uint32_t *weight_idx,
+                                                        const float *codebook_interleaved,
+                                                        const float *bias_interleaved,
+                                                        float *out_interleaved,
+                                                        uint8_t bits_per_cb);
+
+void gemm_exec_compact_sve_fp32_interleaved_4D_same_seq(gemm_t gemm_layer,
+                                                        const float *in_interleaved,
+                                                        const uint32_t *weight_idx,
+                                                        const float *codebook_interleaved,
+                                                        const float *bias_interleaved,
+                                                        float *out_interleaved,
+                                                        uint8_t bits_per_cb);
+
+void gemm_exec_compact_sve_fp32_interleaved_4D_diff_seq(gemm_t gemm_layer,
+                                                       const float *in_interleaved,
+                                                       const uint32_t *weight_idx_interleaved,
+                                                       const float *codebook_interleaved,
+                                                       const float *bias_interleaved,
+                                                       float *out_interleaved,
+                                                       uint8_t bits_per_cb);
+
 void gemm_exec_compact_int_sve(gemm_t gemm_layer,
                                const int8_t *in,
                                const uint32_t *weight_idx,

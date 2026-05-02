@@ -141,6 +141,88 @@ void sve_gemm_row_compact_int8(const uint32_t *packed_row,
     }
 }
 
+void sve_gemm_row_compact_fp32(const uint32_t *packed_row,
+                               uint32_t n_words_row,
+                               uint32_t k_elems,
+                               const float *in_mat,
+                               uint32_t seq_tile,
+                               uint32_t ld_in,
+                               const float *codebook,
+                               float *out_mat,
+                               uint32_t out_col,
+                               uint32_t ld_out,
+                               float bias_val,
+                               int add_bias,
+                               int accumulate,
+                               uint8_t bits_per_cb) {
+    if ((bits_per_cb == 0u) || (k_elems == 0u)) {
+        for (uint32_t row = 0; row < seq_tile; row++) {
+            float acc = add_bias ? bias_val : 0.0f;
+            float *out_slot = &out_mat[row * ld_out + out_col];
+            if (accumulate) {
+                *out_slot += acc;
+            } else {
+                *out_slot = acc;
+            }
+        }
+        return;
+    }
+
+    const uint32_t idxs_per_word = 32u / bits_per_cb;
+    const uint32_t idx_mask = gemm_sve_idx_mask(bits_per_cb);
+    const uint32_t n_lanes = (uint32_t)svcntw();
+    const svuint32_t idx_mask_v = svdup_u32(idx_mask);
+
+    for (uint32_t row = 0; row < seq_tile; row++) {
+        svfloat32_t acc_v = svdup_f32(0.0f);
+        uint32_t input_idx = 0;
+
+        for (uint32_t cw = 0; (cw < n_words_row) && (input_idx < k_elems);
+             cw += n_lanes) {
+            svbool_t load_pg = svwhilelt_b32((uint64_t)cw, (uint64_t)n_words_row);
+            svuint32_t packed_idxs = svld1_u32(load_pg, &packed_row[cw]);
+            uint32_t n_loaded_lanes = (uint32_t)svcntp_b32(load_pg, load_pg);
+
+            for (uint32_t lane = 0; lane < n_loaded_lanes; lane++) {
+                svuint32_t dup_idxs_packed = svdup_lane_u32(packed_idxs, lane);
+
+                for (uint32_t idx_ptr = 0;
+                     (idx_ptr < idxs_per_word) && (input_idx < k_elems);
+                     idx_ptr += n_lanes) {
+                    const uint32_t missing_lane = idxs_per_word - idx_ptr;
+                    const uint32_t missing_total = k_elems - input_idx;
+                    const uint32_t active_lanes =
+                        (missing_lane < missing_total) ? missing_lane : missing_total;
+
+                    svbool_t bits_pg = svwhilelt_b32((uint64_t)0, (uint64_t)active_lanes);
+                    svuint32_t shifts = svindex_u32(idx_ptr * bits_per_cb, bits_per_cb);
+                    svuint32_t cb_idxs = svlsr_u32_z(bits_pg, dup_idxs_packed, shifts);
+                    cb_idxs = svand_u32_z(bits_pg, cb_idxs, idx_mask_v);
+
+                    svfloat32_t in_vals = svld1_f32(bits_pg, &in_mat[row * ld_in + input_idx]);
+                    svfloat32_t weights =
+                        svld1_gather_u32index_f32(bits_pg, codebook, cb_idxs);
+
+                    acc_v = svmla_f32_m(bits_pg, acc_v, in_vals, weights);
+                    input_idx += (uint32_t)svcntp_b32(bits_pg, bits_pg);
+                }
+            }
+        }
+
+        float acc = svaddv_f32(svptrue_b32(), acc_v);
+        if (add_bias) {
+            acc += bias_val;
+        }
+
+        float *out_slot = &out_mat[row * ld_out + out_col];
+        if (accumulate) {
+            *out_slot += acc;
+        } else {
+            *out_slot = acc;
+        }
+    }
+}
+
 void sve_gemm_row_compact_int8_interleaved_4D_diff_seq(
     const uint32_t *packed_rows_interleaved,
     uint32_t n_words_row,

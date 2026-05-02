@@ -17,6 +17,9 @@
 #include <filesystem>
 
 #include "transformer_layers/debuggerFunctions.h"
+#if CFG_USE_FP32_TRANSFORMER
+#include "transformer_layers/transformerFloat.h"
+#endif
 
 #define KERNEL_DIM SA_SIZE
 #define MAX_COL (SA_SIZE/4)
@@ -152,6 +155,7 @@ void test() {
     std::cout << "CFG_PROFILE_GEMM_ONLY = " << CFG_PROFILE_GEMM_ONLY << std::endl;
     std::cout << "CFG_GEM5_PROFILE_REGIONS = " << CFG_GEM5_PROFILE_REGIONS << std::endl;
     std::cout << "CFG_FULL_INTERLEAVED_PIPELINE = " << CFG_FULL_INTERLEAVED_PIPELINE << std::endl;
+    std::cout << "CFG_USE_FP32_TRANSFORMER = " << CFG_USE_FP32_TRANSFORMER << std::endl;
     std::cout << "CFG_SIMD = " << CFG_SIMD << std::endl;
     
     
@@ -171,6 +175,13 @@ void test() {
     std::filesystem::create_directories(dir_name);
 #endif
 
+    const std::size_t learner_count = getTransformerLearnerCount();
+    std::cout << "CODEBOOK_REGISTRY_N_LEARNERS = " << learner_count << std::endl;
+
+#if CFG_USE_FP32_TRANSFORMER
+    TransformerFloat::run(learner_count, dir_name + "/multiple_learner_outputs/c");
+    return;
+#endif
 
     uint32_t *tensor_in = new uint32_t[D_SEQ * D_MODEL >> 2];
 #if CFG_RELOAD_WEIGHT
@@ -215,9 +226,6 @@ void test() {
     blockWise2RowWise(tensor_in, tensorInRowWise, D_SEQ, D_MODEL >> 2);
     tensor_in = tensorInRowWise;
 #endif
-
-    const std::size_t learner_count = getTransformerLearnerCount();
-    std::cout << "CODEBOOK_REGISTRY_N_LEARNERS = " << learner_count << std::endl;
 
     const std::string multiple_learner_output_root = dir_name + "/multiple_learner_outputs/c";
     if (learner_count > 1) {

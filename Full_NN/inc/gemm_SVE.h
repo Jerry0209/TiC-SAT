@@ -24,6 +24,21 @@ void sve_gemm_row_compact_int8(const uint32_t *packed_row,
                                int accumulate,
                                uint8_t bits_per_cb);
 
+void sve_gemm_row_compact_fp32(const uint32_t *packed_row,
+                               uint32_t n_words_row,
+                               uint32_t k_elems,
+                               const float *in_mat,
+                               uint32_t seq_tile,
+                               uint32_t ld_in,
+                               const float *codebook,
+                               float *out_mat,
+                               uint32_t out_col,
+                               uint32_t ld_out,
+                               float bias_val,
+                               int add_bias,
+                               int accumulate,
+                               uint8_t bits_per_cb);
+
 void sve_gemm_row_compact_int8_interleaved_4D_diff_seq(
     const uint32_t *packed_rows_interleaved,
     uint32_t n_words_row,
