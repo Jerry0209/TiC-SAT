@@ -140,7 +140,8 @@ void test() {
 
     std::cout << "N_LEARNERS = " << N_LEARNERS << std::endl;
     std::cout << "CODEBOOK_SIZE = " << CB_SIZE << std::endl;
-    std::cout << "TILE_SIZE = " << TILE_SIZE << std::endl;
+    std::cout << "TILE_L1_SIZE = " << TILE_L1_SIZE << std::endl;
+    std::cout << "TILE_L2_SIZE = " << TILE_L2_SIZE << std::endl;
     std::cout << "USE_F32 = " << USE_F32 << std::endl;
 
     std::cout << "CFG_RELOAD_WEIGHT = " << CFG_RELOAD_WEIGHT << std::endl;

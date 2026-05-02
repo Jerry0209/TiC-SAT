@@ -34,6 +34,18 @@ static uint32_t get_packed_index_interleaved_4d(
 }
 
 #ifdef SIMD
+#ifndef TILE_L1_SIZE
+#define TILE_L1_SIZE 0
+#endif
+
+static uint32_t gemm_sve_l1_tile_or_full(uint32_t full_size) {
+    const uint32_t tile_size = (uint32_t)TILE_L1_SIZE;
+    if ((tile_size <= 1u) || (tile_size >= full_size)) {
+        return full_size;
+    }
+    return tile_size;
+}
+
 static uint32_t gemm_sve_codebook_capacity(void) {
 #if defined(N_SVE_REG_CB_4)
     return N_SVE_LANES * 4u; // Four SVE registers are available for each learner codebook.
@@ -315,8 +327,8 @@ void gemm_exec_compact_int_sve(gemm_t gemm_layer,
         codebook_i32[cb_idx] = (int32_t)codebook[cb_idx];
     }
 
-    const uint32_t tile_seq = gemm_layer.seq_len;
-    const uint32_t tile_k_words = gemm_layer.n_words_row;
+    const uint32_t tile_seq = gemm_sve_l1_tile_or_full(gemm_layer.seq_len);
+    const uint32_t tile_k_words = gemm_sve_l1_tile_or_full(gemm_layer.n_words_row);
 
     for (uint32_t out_idx = 0; out_idx < gemm_layer.output_size; out_idx++) {
         const uint32_t *packed_row =
@@ -457,8 +469,8 @@ void gemm_exec_compact_int_sve_interleaved_4D_diff_seq(
         input_i32_interleaved[idx] = (int32_t)in_interleaved[idx];
     }
 
-    const uint32_t tile_seq = gemm_layer.seq_len;
-    const uint32_t tile_k_words = gemm_layer.n_words_row;
+    const uint32_t tile_seq = gemm_sve_l1_tile_or_full(gemm_layer.seq_len);
+    const uint32_t tile_k_words = gemm_sve_l1_tile_or_full(gemm_layer.n_words_row);
 
     for (uint32_t out_idx = 0; out_idx < gemm_layer.output_size; out_idx++) {
         const uint32_t *packed_rows =
@@ -596,8 +608,8 @@ void gemm_exec_compact_int_sve_interleaved_2D_same_seq(
         input_i32_interleaved[idx] = (int32_t)in_interleaved[idx];
     }
 
-    const uint32_t tile_seq = gemm_layer.seq_len;
-    const uint32_t tile_k_words = gemm_layer.n_words_row;
+    const uint32_t tile_seq = gemm_sve_l1_tile_or_full(gemm_layer.seq_len);
+    const uint32_t tile_k_words = gemm_sve_l1_tile_or_full(gemm_layer.n_words_row);
 
     for (uint32_t out_idx = 0; out_idx < gemm_layer.output_size; out_idx++) {
         const uint32_t *packed_row =
@@ -739,8 +751,8 @@ void gemm_exec_compact_int_sve_interleaved_4D_same_seq(
         input_i32_interleaved[idx] = (int32_t)in_interleaved[idx];
     }
 
-    const uint32_t tile_seq = gemm_layer.seq_len;
-    const uint32_t tile_k_words = gemm_layer.n_words_row;
+    const uint32_t tile_seq = gemm_sve_l1_tile_or_full(gemm_layer.seq_len);
+    const uint32_t tile_k_words = gemm_sve_l1_tile_or_full(gemm_layer.n_words_row);
 
     for (uint32_t out_idx = 0; out_idx < gemm_layer.output_size; out_idx++) {
         const uint32_t *packed_row =
