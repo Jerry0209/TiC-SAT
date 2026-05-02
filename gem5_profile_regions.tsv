@@ -1,0 +1,8 @@
+scope	group2_full_interleaved_transformer_block
+dump_index	checkpoint	interval_since_previous
+1	after_mha	MHA
+2	after_projection	Projection
+3	after_attn_addnorm	non_GEMM_after_projection
+4	after_ff1	FF1
+5	after_ff2	FF2
+6	final_total	non_GEMM_after_ff2

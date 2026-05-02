@@ -18,12 +18,76 @@
 
 namespace {
 
-// Run m5 command only if gem5 helper is available.
+bool m5Available() {
+    static int cached_m5_available = -1;
+    if (cached_m5_available < 0) {
+        cached_m5_available =
+            (std::system("command -v m5 >/dev/null 2>&1") == 0) ? 1 : 0;
+    }
+    return cached_m5_available == 1;
+}
+
 void runM5IfAvailable(const char* command) {
-    if (std::system("command -v m5 >/dev/null 2>&1") == 0) {
+    if (m5Available()) {
         std::system(command);
     }
 }
+
+#if CFG_GEM5_PROFILE_REGIONS
+const char* kGem5ProfileIndexPath = "gem5_profile_regions.tsv";
+std::size_t gem5_profile_dump_index = 0;
+
+void resetTransformerStatsWindow(const char* scope) {
+    gem5_profile_dump_index = 0;
+
+    std::ofstream index(kGem5ProfileIndexPath);
+    if (index.is_open()) {
+        index << "scope\t" << scope << "\n";
+        index << "dump_index\tcheckpoint\tinterval_since_previous\n";
+    }
+
+    std::cout << "[GEM5_PROFILE] reset scope=" << scope << std::endl;
+    runM5IfAvailable("m5 resetstats");
+}
+
+void dumpTransformerStatsCheckpoint(const char* checkpoint,
+                                    const char* interval_since_previous) {
+    gem5_profile_dump_index++;
+
+    std::ofstream index(kGem5ProfileIndexPath, std::ios::app);
+    if (index.is_open()) {
+        index << gem5_profile_dump_index << "\t"
+              << checkpoint << "\t"
+              << interval_since_previous << "\n";
+    }
+
+    std::cout << "[GEM5_PROFILE] dump " << gem5_profile_dump_index
+              << " checkpoint=" << checkpoint
+              << " interval=" << interval_since_previous << std::endl;
+    runM5IfAvailable("m5 dumpstats");
+}
+
+void dumpTransformerStatsCheckpointIfProfiling(const char* checkpoint,
+                                               const char* interval_since_previous) {
+    dumpTransformerStatsCheckpoint(checkpoint, interval_since_previous);
+}
+
+void dumpTransformerStatsLegacyBoundary(const char* checkpoint,
+                                        const char* interval_since_previous) {
+    dumpTransformerStatsCheckpoint(checkpoint, interval_since_previous);
+}
+#else
+void resetTransformerStatsWindow(const char*) {
+    runM5IfAvailable("m5 resetstats");
+}
+
+void dumpTransformerStatsCheckpointIfProfiling(const char*, const char*) {
+}
+
+void dumpTransformerStatsLegacyBoundary(const char*, const char*) {
+    runM5IfAvailable("m5 dumpresetstats");
+}
+#endif
 
 #if CFG_FULL_INTERLEAVED_PIPELINE
 CodebookDense* requireInterleavedCodebookDense2(const char* label,
@@ -417,7 +481,7 @@ TransformerBlock::~TransformerBlock() {
 }
 
 void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* output) {
-    runM5IfAvailable("m5 resetstats");
+    resetTransformerStatsWindow("single_transformer_block");
 
     // Compute each attention head output independently.
     for (std::size_t n = 0; n < num_heads_; ++n) {
@@ -449,6 +513,7 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* o
         multihead_for_condense,
         seq_len,
         num_heads_ * head_hidden_size_);
+    dumpTransformerStatsCheckpointIfProfiling("after_mha", "MHA");
 
     std::cout << "Condense" << std::endl;
     condense->compute(seq_len, multihead_for_condense, condense_out);
@@ -459,6 +524,7 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* o
         condense_out,
         seq_len,
         input_dim_);
+    dumpTransformerStatsCheckpointIfProfiling("after_projection", "Projection");
 
 #if CFG_USE_CODEBOOK_REFERENCE
     std::fill(referenceCondense,
@@ -509,7 +575,7 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* o
 
 #endif
 
-    runM5IfAvailable("m5 dumpresetstats");
+    dumpTransformerStatsLegacyBoundary("after_attn_addnorm", "non_GEMM_after_projection");
 
     std::cout << "Feed Forward 0" << std::endl;
     feedForward0->compute(seq_len, condense_out, intermediateFF);
@@ -520,6 +586,7 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* o
         intermediateFF,
         seq_len,
         ff_size_);
+    dumpTransformerStatsCheckpointIfProfiling("after_ff1", "FF1");
 
 #if CFG_ENABLE_DEBUG_PRINT
     printPackedPreview("ffn0", intermediateFF, (seq_len * ff_size_) >> 2);
@@ -552,6 +619,7 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* o
         output,
         seq_len,
         input_dim_);
+    dumpTransformerStatsCheckpointIfProfiling("after_ff2", "FF2");
 
 #if CFG_ENABLE_DEBUG_PRINT
     printPackedPreview("ffn1_pre_addnorm", output, (seq_len * input_dim_) >> 2);
@@ -610,7 +678,7 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* o
 
 #endif
 
-    runM5IfAvailable("m5 dumpresetstats");
+    dumpTransformerStatsLegacyBoundary("final_total", "non_GEMM_after_ff2");
 }
 
 template <std::size_t LearnerCount>
@@ -632,7 +700,7 @@ void TransformerBlock::computeGroupImpl(std::size_t seq_len,
     }
 #endif
 
-    runM5IfAvailable("m5 resetstats");
+    resetTransformerStatsWindow("grouped_transformer_block");
 
     for (std::size_t n = 0; n < blocks[0]->num_heads_; ++n) {
         std::cout << "Head : " << n << std::endl;
@@ -675,6 +743,7 @@ void TransformerBlock::computeGroupImpl(std::size_t seq_len,
             seq_len,
             blocks[learner]->num_heads_ * blocks[learner]->head_hidden_size_);
     }
+    dumpTransformerStatsCheckpointIfProfiling("after_mha", "MHA");
 
     std::cout << "Condense" << std::endl;
     LinearLayer* condense_layers[LearnerCount];
@@ -729,6 +798,7 @@ void TransformerBlock::computeGroupImpl(std::size_t seq_len,
                   blocks[learner]->referenceCondenseAfterAddNorm);
 #endif
     }
+    dumpTransformerStatsCheckpointIfProfiling("after_projection", "Projection");
 
     std::cout << "Add Norm" << std::endl;
     for (std::size_t learner = 0; learner < LearnerCount; learner++) {
@@ -765,7 +835,7 @@ void TransformerBlock::computeGroupImpl(std::size_t seq_len,
 #endif
     }
 
-    runM5IfAvailable("m5 dumpresetstats");
+    dumpTransformerStatsLegacyBoundary("after_attn_addnorm", "non_GEMM_after_projection");
 
     std::cout << "Feed Forward 0" << std::endl;
     LinearLayer* ff0_layers[LearnerCount];
@@ -814,6 +884,7 @@ void TransformerBlock::computeGroupImpl(std::size_t seq_len,
 #endif
 #endif
     }
+    dumpTransformerStatsCheckpointIfProfiling("after_ff1", "FF1");
 
     std::cout << "Feed Forward 1" << std::endl;
     LinearLayer* ff1_layers[LearnerCount];
@@ -864,6 +935,7 @@ void TransformerBlock::computeGroupImpl(std::size_t seq_len,
                   blocks[learner]->referenceFinalOutput);
 #endif
     }
+    dumpTransformerStatsCheckpointIfProfiling("after_ff2", "FF2");
 
     std::cout << "Add Norm" << std::endl;
     for (std::size_t learner = 0; learner < LearnerCount; learner++) {
@@ -900,7 +972,7 @@ void TransformerBlock::computeGroupImpl(std::size_t seq_len,
 #endif
     }
 
-    runM5IfAvailable("m5 dumpresetstats");
+    dumpTransformerStatsLegacyBoundary("final_total", "non_GEMM_after_ff2");
 }
 
 #if CFG_FULL_INTERLEAVED_PIPELINE
@@ -908,13 +980,17 @@ void TransformerBlock::computeGroup2FullInterleaved(std::size_t seq_len,
                                                     TransformerBlock* blocks[2],
                                                     uint32_t* const inputs[2],
                                                     uint32_t* const outputs[2]) {
-    runM5IfAvailable("m5 resetstats");
+    resetTransformerStatsWindow("group2_full_interleaved_transformer_block");
 
     std::string dump_dirs[2];
+#if CFG_USE_CODEBOOK_REFERENCE
     std::size_t learner_ids[2];
+#endif
     for (std::size_t learner = 0; learner < 2u; learner++) {
         dump_dirs[learner] = blocks[learner]->dump_dir_;
+#if CFG_USE_CODEBOOK_REFERENCE
         learner_ids[learner] = blocks[learner]->learner_idx_;
+#endif
     }
 
     const std::size_t input_dim = blocks[0]->input_dim_;
@@ -960,6 +1036,7 @@ void TransformerBlock::computeGroup2FullInterleaved(std::size_t seq_len,
         multihead_interleaved.data(),
         seq_len,
         num_heads * head_hidden_size);
+    dumpTransformerStatsCheckpointIfProfiling("after_mha", "MHA");
 
     std::cout << "Condense" << std::endl;
     LinearLayer* condense_layers[2];
@@ -1000,6 +1077,7 @@ void TransformerBlock::computeGroup2FullInterleaved(std::size_t seq_len,
         condense_interleaved.data(),
         seq_len,
         input_dim);
+    dumpTransformerStatsCheckpointIfProfiling("after_projection", "Projection");
 
     std::cout << "Add Norm" << std::endl;
 #if CFG_USE_CODEBOOK_REFERENCE
@@ -1028,7 +1106,7 @@ void TransformerBlock::computeGroup2FullInterleaved(std::size_t seq_len,
         seq_len,
         input_dim);
 
-    runM5IfAvailable("m5 dumpresetstats");
+    dumpTransformerStatsLegacyBoundary("after_attn_addnorm", "non_GEMM_after_projection");
 
     std::cout << "Feed Forward 0" << std::endl;
     LinearLayer* ff0_layers[2];
@@ -1082,6 +1160,7 @@ void TransformerBlock::computeGroup2FullInterleaved(std::size_t seq_len,
         ff0_interleaved.data(),
         seq_len,
         ff_size);
+    dumpTransformerStatsCheckpointIfProfiling("after_ff1", "FF1");
 
     std::cout << "Feed Forward 1" << std::endl;
     LinearLayer* ff1_layers[2];
@@ -1135,6 +1214,7 @@ void TransformerBlock::computeGroup2FullInterleaved(std::size_t seq_len,
         ff1_interleaved.data(),
         seq_len,
         input_dim);
+    dumpTransformerStatsCheckpointIfProfiling("after_ff2", "FF2");
 
     std::cout << "Add Norm" << std::endl;
 #if CFG_USE_CODEBOOK_REFERENCE
@@ -1165,20 +1245,24 @@ void TransformerBlock::computeGroup2FullInterleaved(std::size_t seq_len,
 
     packInterleavedLearners2(seq_len, input_dim, ff1_interleaved.data(), outputs);
 
-    runM5IfAvailable("m5 dumpresetstats");
+    dumpTransformerStatsLegacyBoundary("final_total", "non_GEMM_after_ff2");
 }
 
 void TransformerBlock::computeGroup4FullInterleaved(std::size_t seq_len,
                                                     TransformerBlock* blocks[4],
                                                     uint32_t* const inputs[4],
                                                     uint32_t* const outputs[4]) {
-    runM5IfAvailable("m5 resetstats");
+    resetTransformerStatsWindow("group4_full_interleaved_transformer_block");
 
     std::string dump_dirs[4];
+#if CFG_USE_CODEBOOK_REFERENCE
     std::size_t learner_ids[4];
+#endif
     for (std::size_t learner = 0; learner < 4u; learner++) {
         dump_dirs[learner] = blocks[learner]->dump_dir_;
+#if CFG_USE_CODEBOOK_REFERENCE
         learner_ids[learner] = blocks[learner]->learner_idx_;
+#endif
     }
 
     const std::size_t input_dim = blocks[0]->input_dim_;
@@ -1224,6 +1308,7 @@ void TransformerBlock::computeGroup4FullInterleaved(std::size_t seq_len,
         multihead_interleaved.data(),
         seq_len,
         num_heads * head_hidden_size);
+    dumpTransformerStatsCheckpointIfProfiling("after_mha", "MHA");
 
     std::cout << "Condense" << std::endl;
     LinearLayer* condense_layers[4];
@@ -1264,6 +1349,7 @@ void TransformerBlock::computeGroup4FullInterleaved(std::size_t seq_len,
         condense_interleaved.data(),
         seq_len,
         input_dim);
+    dumpTransformerStatsCheckpointIfProfiling("after_projection", "Projection");
 
     std::cout << "Add Norm" << std::endl;
 #if CFG_USE_CODEBOOK_REFERENCE
@@ -1292,7 +1378,7 @@ void TransformerBlock::computeGroup4FullInterleaved(std::size_t seq_len,
         seq_len,
         input_dim);
 
-    runM5IfAvailable("m5 dumpresetstats");
+    dumpTransformerStatsLegacyBoundary("after_attn_addnorm", "non_GEMM_after_projection");
 
     std::cout << "Feed Forward 0" << std::endl;
     LinearLayer* ff0_layers[4];
@@ -1346,6 +1432,7 @@ void TransformerBlock::computeGroup4FullInterleaved(std::size_t seq_len,
         ff0_interleaved.data(),
         seq_len,
         ff_size);
+    dumpTransformerStatsCheckpointIfProfiling("after_ff1", "FF1");
 
     std::cout << "Feed Forward 1" << std::endl;
     LinearLayer* ff1_layers[4];
@@ -1399,6 +1486,7 @@ void TransformerBlock::computeGroup4FullInterleaved(std::size_t seq_len,
         ff1_interleaved.data(),
         seq_len,
         input_dim);
+    dumpTransformerStatsCheckpointIfProfiling("after_ff2", "FF2");
 
     std::cout << "Add Norm" << std::endl;
 #if CFG_USE_CODEBOOK_REFERENCE
@@ -1429,7 +1517,7 @@ void TransformerBlock::computeGroup4FullInterleaved(std::size_t seq_len,
 
     packInterleavedLearners4(seq_len, input_dim, ff1_interleaved.data(), outputs);
 
-    runM5IfAvailable("m5 dumpresetstats");
+    dumpTransformerStatsLegacyBoundary("final_total", "non_GEMM_after_ff2");
 }
 #endif
 

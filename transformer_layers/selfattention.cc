@@ -316,7 +316,21 @@ void SingleHeadSelfAttn::compute(std::size_t seq_len, uint32_t* input, uint32_t*
                    head_hidden_size_, seq_len);
 #endif
 
+    dumpPackedMatrixIfEnabled(
+        dump_dir_,
+        "qk_scores_h" + std::to_string(head_idx_) + ".txt",
+        attention_scores_,
+        seq_len,
+        seq_len);
+
     softmax_->compute(attention_scores_, seq_len);
+
+    dumpPackedMatrixIfEnabled(
+        dump_dir_,
+        "softmax_qk_h" + std::to_string(head_idx_) + ".txt",
+        attention_scores_,
+        seq_len,
+        seq_len);
 
 #ifdef SIMD
     simdComputeRWMA(seq_len, attention_scores_, output, value_layer_out_,
@@ -326,12 +340,6 @@ void SingleHeadSelfAttn::compute(std::size_t seq_len, uint32_t* input, uint32_t*
                    seq_len, head_hidden_size_);
 #endif
 
-    dumpPackedMatrixIfEnabled(
-        dump_dir_,
-        "head_out_h" + std::to_string(head_idx_) + ".txt",
-        output,
-        seq_len,
-        head_hidden_size_);
 #else
     std::cout << "BWMA method" << std::endl;
 
@@ -346,7 +354,21 @@ void SingleHeadSelfAttn::compute(std::size_t seq_len, uint32_t* input, uint32_t*
                    head_hidden_size_, seq_len);
 #endif
 
+    dumpPackedMatrixIfEnabled(
+        dump_dir_,
+        "qk_scores_h" + std::to_string(head_idx_) + ".txt",
+        attention_scores_,
+        seq_len,
+        seq_len);
+
     softmax_->computeRearranged(attention_scores_, seq_len, kernel_size_);
+
+    dumpPackedMatrixIfEnabled(
+        dump_dir_,
+        "softmax_qk_h" + std::to_string(head_idx_) + ".txt",
+        attention_scores_,
+        seq_len,
+        seq_len);
 
 #ifdef SIMD
     simdComputeBWMA(seq_len, attention_scores_, output, value_layer_out_,
@@ -357,7 +379,28 @@ void SingleHeadSelfAttn::compute(std::size_t seq_len, uint32_t* input, uint32_t*
 #endif
 #endif
 
+    dumpPackedMatrixIfEnabled(
+        dump_dir_,
+        "softmax_v_pre_post_h" + std::to_string(head_idx_) + ".txt",
+        output,
+        seq_len,
+        head_hidden_size_);
+
+    dumpPackedMatrixIfEnabled(
+        dump_dir_,
+        "head_out_h" + std::to_string(head_idx_) + ".txt",
+        output,
+        seq_len,
+        head_hidden_size_);
+
     softmax_->post_softmax(output, seq_len, head_hidden_size_);
+
+    dumpPackedMatrixIfEnabled(
+        dump_dir_,
+        "head_out_post_h" + std::to_string(head_idx_) + ".txt",
+        output,
+        seq_len,
+        head_hidden_size_);
 }
 
 // Grouped self-attention entry used by TransformerBlock::computeGroup2/4().
@@ -484,7 +527,21 @@ void SingleHeadSelfAttn::computeGroupImpl(std::size_t seq_len,
                        self->key_transposed_layer_out_, self->head_hidden_size_, seq_len);
 #endif
 
+        dumpPackedMatrixIfEnabled(
+            self->dump_dir_,
+            "qk_scores_h" + std::to_string(self->head_idx_) + ".txt",
+            self->attention_scores_,
+            seq_len,
+            seq_len);
+
         self->softmax_->compute(self->attention_scores_, seq_len);
+
+        dumpPackedMatrixIfEnabled(
+            self->dump_dir_,
+            "softmax_qk_h" + std::to_string(self->head_idx_) + ".txt",
+            self->attention_scores_,
+            seq_len,
+            seq_len);
 
 #ifdef SIMD
         simdComputeRWMA(seq_len, self->attention_scores_, outputs[learner], self->value_layer_out_,
@@ -494,12 +551,6 @@ void SingleHeadSelfAttn::computeGroupImpl(std::size_t seq_len,
                        seq_len, self->head_hidden_size_);
 #endif
 
-        dumpPackedMatrixIfEnabled(
-            self->dump_dir_,
-            "head_out_h" + std::to_string(self->head_idx_) + ".txt",
-            outputs[learner],
-            seq_len,
-            self->head_hidden_size_);
 #else
         std::cout << "BWMA method" << std::endl;
 
@@ -515,7 +566,21 @@ void SingleHeadSelfAttn::computeGroupImpl(std::size_t seq_len,
                        self->key_transposed_layer_out_, self->head_hidden_size_, seq_len);
 #endif
 
+        dumpPackedMatrixIfEnabled(
+            self->dump_dir_,
+            "qk_scores_h" + std::to_string(self->head_idx_) + ".txt",
+            self->attention_scores_,
+            seq_len,
+            seq_len);
+
         self->softmax_->computeRearranged(self->attention_scores_, seq_len, self->kernel_size_);
+
+        dumpPackedMatrixIfEnabled(
+            self->dump_dir_,
+            "softmax_qk_h" + std::to_string(self->head_idx_) + ".txt",
+            self->attention_scores_,
+            seq_len,
+            seq_len);
 
 #ifdef SIMD
         simdComputeBWMA(seq_len, self->attention_scores_, outputs[learner], self->value_layer_out_,
@@ -526,7 +591,28 @@ void SingleHeadSelfAttn::computeGroupImpl(std::size_t seq_len,
 #endif
 #endif
 
+        dumpPackedMatrixIfEnabled(
+            self->dump_dir_,
+            "softmax_v_pre_post_h" + std::to_string(self->head_idx_) + ".txt",
+            outputs[learner],
+            seq_len,
+            self->head_hidden_size_);
+
+        dumpPackedMatrixIfEnabled(
+            self->dump_dir_,
+            "head_out_h" + std::to_string(self->head_idx_) + ".txt",
+            outputs[learner],
+            seq_len,
+            self->head_hidden_size_);
+
         self->softmax_->post_softmax(outputs[learner], seq_len, self->head_hidden_size_);
+
+        dumpPackedMatrixIfEnabled(
+            self->dump_dir_,
+            "head_out_post_h" + std::to_string(self->head_idx_) + ".txt",
+            outputs[learner],
+            seq_len,
+            self->head_hidden_size_);
     }
 }
 
@@ -695,6 +781,13 @@ void SingleHeadSelfAttn::computeInterleaved2D(std::size_t seq_len,
         seq_len,
         head_hidden_size);
 
+    dumpInterleavedLearnerMatrices2(
+        dump_dirs,
+        "head_out_h" + std::to_string(heads[0]->head_idx_) + ".txt",
+        output_interleaved,
+        seq_len,
+        head_hidden_size);
+
     heads[0]->softmax_->post_softmax_interleaved2D(
         output_interleaved,
         seq_len,
@@ -702,7 +795,7 @@ void SingleHeadSelfAttn::computeInterleaved2D(std::size_t seq_len,
 
     dumpInterleavedLearnerMatrices2(
         dump_dirs,
-        "head_out_h" + std::to_string(heads[0]->head_idx_) + ".txt",
+        "head_out_post_h" + std::to_string(heads[0]->head_idx_) + ".txt",
         output_interleaved,
         seq_len,
         head_hidden_size);
@@ -859,6 +952,13 @@ void SingleHeadSelfAttn::computeInterleaved4D(std::size_t seq_len,
         seq_len,
         head_hidden_size);
 
+    dumpInterleavedLearnerMatrices4(
+        dump_dirs,
+        "head_out_h" + std::to_string(heads[0]->head_idx_) + ".txt",
+        output_interleaved,
+        seq_len,
+        head_hidden_size);
+
     heads[0]->softmax_->post_softmax_interleaved4D(
         output_interleaved,
         seq_len,
@@ -866,7 +966,7 @@ void SingleHeadSelfAttn::computeInterleaved4D(std::size_t seq_len,
 
     dumpInterleavedLearnerMatrices4(
         dump_dirs,
-        "head_out_h" + std::to_string(heads[0]->head_idx_) + ".txt",
+        "head_out_post_h" + std::to_string(heads[0]->head_idx_) + ".txt",
         output_interleaved,
         seq_len,
         head_hidden_size);

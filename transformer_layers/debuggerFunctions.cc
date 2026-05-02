@@ -9,6 +9,7 @@
 #include <cstdlib>
 
 #include "codebookDense.h"
+#include "run_mode_config.h"
 
 void print_weight(uint32_t* kernel, int n_row, int n_col){
     for (int i=0; i< n_row; i++){
@@ -236,12 +237,21 @@ void dumpPackedMatrixIfEnabled(const std::string& dump_dir,
                                const uint32_t* buffer,
                                std::size_t rows,
                                std::size_t cols) {
+#if CFG_GEM5_PROFILE_REGIONS
+    (void)dump_dir;
+    (void)filename;
+    (void)buffer;
+    (void)rows;
+    (void)cols;
+    return;
+#else
     if (dump_dir.empty()) {
         return;
     }
 
     const std::string path = dump_dir + "/" + filename;
     savePackedMatrixText(path.c_str(), buffer, rows, cols);
+#endif
 }
 
 void printPackedTensorAsPythonList(const std::string& var_name,

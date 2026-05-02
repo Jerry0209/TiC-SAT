@@ -81,6 +81,15 @@
 #define CFG_PROFILE_GEMM_ONLY 0
 #endif
 
+// Emit named gem5 checkpoint dumps for coarse transformer regions.
+// Post-processing can subtract adjacent dumpstats snapshots to get each
+// region while the last snapshot remains the whole transformer block total.
+#ifdef GEM5_PROFILE_REGIONS
+#define CFG_GEM5_PROFILE_REGIONS 1
+#else
+#define CFG_GEM5_PROFILE_REGIONS 0
+#endif
+
 // Enable SIMD/SVE implementations when the build defines SIMD.
 #ifdef SIMD
 #define CFG_SIMD 1
@@ -96,7 +105,7 @@
 #define CFG_FULL_INTERLEAVED_PIPELINE 0
 #endif
 
-#if CFG_PROFILE_GEMM_ONLY
+#if CFG_PROFILE_GEMM_ONLY || CFG_GEM5_PROFILE_REGIONS
 #undef CFG_USE_CODEBOOK_REFERENCE
 #define CFG_USE_CODEBOOK_REFERENCE 0
 
