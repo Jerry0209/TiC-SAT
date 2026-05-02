@@ -122,6 +122,8 @@ void gemm_exec_compact(gemm_t gemm_layer,
     }
 }
 
+
+// Scalar version of the compact gemm exec, used as a fallback when the codebook cannot be fully cached in SVE registers.
 void gemm_exec_compact_fp32_interleaved_2D_same_seq(gemm_t gemm_layer,
                                                     const float *in_interleaved,
                                                     const uint32_t *weight_idx,
@@ -476,13 +478,99 @@ void gemm_exec_compact_sve_fp32_interleaved_2D_same_seq(
     const float *bias_interleaved,
     float *out_interleaved,
     uint8_t bits_per_cb) {
-    gemm_exec_compact_fp32_interleaved_2D_same_seq(gemm_layer,
-                                                   in_interleaved,
-                                                   weight_idx,
-                                                   codebook_interleaved,
-                                                   bias_interleaved,
-                                                   out_interleaved,
-                                                   bits_per_cb);
+    if ((gemm_layer.seq_len == 0u) || (gemm_layer.output_size == 0u)) {
+        return;
+    }
+
+    if ((bits_per_cb == 0u) || (gemm_layer.input_size == 0u) ||
+        (gemm_layer.n_words_row == 0u)) {
+        for (uint32_t seq = 0; seq < gemm_layer.seq_len; seq++) {
+            for (uint32_t out_idx = 0; out_idx < gemm_layer.output_size; out_idx++) {
+                float *out_slot =
+                    &out_interleaved[((seq * gemm_layer.output_size) + out_idx) * 2u];
+                out_slot[0] = (bias_interleaved == NULL)
+                                  ? 0.0f
+                                  : bias_interleaved[out_idx * 2u + 0u];
+                out_slot[1] = (bias_interleaved == NULL)
+                                  ? 0.0f
+                                  : bias_interleaved[out_idx * 2u + 1u];
+            }
+        }
+        return;
+    }
+
+    if (bits_per_cb > 8u) {
+        gemm_exec_compact_fp32_interleaved_2D_same_seq(gemm_layer,
+                                                       in_interleaved,
+                                                       weight_idx,
+                                                       codebook_interleaved,
+                                                       bias_interleaved,
+                                                       out_interleaved,
+                                                       bits_per_cb);
+        return;
+    }
+
+    const uint32_t codebook_size = 1u << bits_per_cb;
+    if (!gemm_sve_codebook_fits_registers(codebook_size)) {
+        gemm_exec_compact_fp32_interleaved_2D_same_seq(gemm_layer,
+                                                       in_interleaved,
+                                                       weight_idx,
+                                                       codebook_interleaved,
+                                                       bias_interleaved,
+                                                       out_interleaved,
+                                                       bits_per_cb);
+        return;
+    }
+
+    const uint32_t tile_seq = gemm_sve_l1_tile_or_full(gemm_layer.seq_len);
+    const uint32_t tile_k_words = gemm_sve_l1_tile_or_full(gemm_layer.n_words_row);
+
+    for (uint32_t out_idx = 0; out_idx < gemm_layer.output_size; out_idx++) {
+        const uint32_t *packed_row =
+            &weight_idx[out_idx * gemm_layer.n_words_row];
+        const float *bias_vals =
+            (bias_interleaved == NULL) ? NULL : &bias_interleaved[out_idx * 2u];
+
+        for (uint32_t seq0 = 0; seq0 < gemm_layer.seq_len; seq0 += tile_seq) {
+            const uint32_t seq_tile =
+                ((seq0 + tile_seq) <= gemm_layer.seq_len)
+                    ? tile_seq
+                    : (gemm_layer.seq_len - seq0);
+
+            uint32_t processed_k = 0;
+            for (uint32_t w0 = 0; w0 < gemm_layer.n_words_row;
+                 w0 += tile_k_words) {
+                const uint32_t tile_words =
+                    ((w0 + tile_k_words) <= gemm_layer.n_words_row)
+                        ? tile_k_words
+                        : (gemm_layer.n_words_row - w0);
+                const uint32_t max_k_in_tile = tile_words * (32u / bits_per_cb);
+                const uint32_t k_tile =
+                    ((processed_k + max_k_in_tile) <= gemm_layer.input_size)
+                        ? max_k_in_tile
+                        : (gemm_layer.input_size - processed_k);
+
+                sve_gemm_row_compact_fp32_interleaved_2D_same_seq(
+                    &packed_row[w0],
+                    tile_words,
+                    k_tile,
+                    &in_interleaved[((seq0 * gemm_layer.input_size) + processed_k) * 2u],
+                    seq_tile,
+                    gemm_layer.input_size * 2u,
+                    codebook_interleaved,
+                    codebook_size,
+                    &out_interleaved[(seq0 * gemm_layer.output_size) * 2u],
+                    out_idx,
+                    gemm_layer.output_size * 2u,
+                    bias_vals,
+                    (w0 == 0u),
+                    (w0 != 0u),
+                    bits_per_cb);
+
+                processed_k += k_tile;
+            }
+        }
+    }
 }
 
 void gemm_exec_compact_sve_fp32_interleaved_4D_same_seq(
@@ -493,13 +581,105 @@ void gemm_exec_compact_sve_fp32_interleaved_4D_same_seq(
     const float *bias_interleaved,
     float *out_interleaved,
     uint8_t bits_per_cb) {
-    gemm_exec_compact_fp32_interleaved_4D_same_seq(gemm_layer,
-                                                   in_interleaved,
-                                                   weight_idx,
-                                                   codebook_interleaved,
-                                                   bias_interleaved,
-                                                   out_interleaved,
-                                                   bits_per_cb);
+    if ((gemm_layer.seq_len == 0u) || (gemm_layer.output_size == 0u)) {
+        return;
+    }
+
+    if ((bits_per_cb == 0u) || (gemm_layer.input_size == 0u) ||
+        (gemm_layer.n_words_row == 0u)) {
+        for (uint32_t seq = 0; seq < gemm_layer.seq_len; seq++) {
+            for (uint32_t out_idx = 0; out_idx < gemm_layer.output_size; out_idx++) {
+                float *out_slot =
+                    &out_interleaved[((seq * gemm_layer.output_size) + out_idx) * 4u];
+                out_slot[0] = (bias_interleaved == NULL)
+                                  ? 0.0f
+                                  : bias_interleaved[out_idx * 4u + 0u];
+                out_slot[1] = (bias_interleaved == NULL)
+                                  ? 0.0f
+                                  : bias_interleaved[out_idx * 4u + 1u];
+                out_slot[2] = (bias_interleaved == NULL)
+                                  ? 0.0f
+                                  : bias_interleaved[out_idx * 4u + 2u];
+                out_slot[3] = (bias_interleaved == NULL)
+                                  ? 0.0f
+                                  : bias_interleaved[out_idx * 4u + 3u];
+            }
+        }
+        return;
+    }
+
+    if (bits_per_cb > 8u) {
+        gemm_exec_compact_fp32_interleaved_4D_same_seq(gemm_layer,
+                                                       in_interleaved,
+                                                       weight_idx,
+                                                       codebook_interleaved,
+                                                       bias_interleaved,
+                                                       out_interleaved,
+                                                       bits_per_cb);
+        return;
+    }
+
+    const uint32_t codebook_size = 1u << bits_per_cb;
+    if (!gemm_sve_codebook_fits_registers(codebook_size)) {
+        gemm_exec_compact_fp32_interleaved_4D_same_seq(gemm_layer,
+                                                       in_interleaved,
+                                                       weight_idx,
+                                                       codebook_interleaved,
+                                                       bias_interleaved,
+                                                       out_interleaved,
+                                                       bits_per_cb);
+        return;
+    }
+
+    const uint32_t tile_seq = gemm_sve_l1_tile_or_full(gemm_layer.seq_len);
+    const uint32_t tile_k_words = gemm_sve_l1_tile_or_full(gemm_layer.n_words_row);
+
+    for (uint32_t out_idx = 0; out_idx < gemm_layer.output_size; out_idx++) {
+        const uint32_t *packed_row =
+            &weight_idx[out_idx * gemm_layer.n_words_row];
+        const float *bias_vals =
+            (bias_interleaved == NULL) ? NULL : &bias_interleaved[out_idx * 4u];
+
+        for (uint32_t seq0 = 0; seq0 < gemm_layer.seq_len; seq0 += tile_seq) {
+            const uint32_t seq_tile =
+                ((seq0 + tile_seq) <= gemm_layer.seq_len)
+                    ? tile_seq
+                    : (gemm_layer.seq_len - seq0);
+
+            uint32_t processed_k = 0;
+            for (uint32_t w0 = 0; w0 < gemm_layer.n_words_row;
+                 w0 += tile_k_words) {
+                const uint32_t tile_words =
+                    ((w0 + tile_k_words) <= gemm_layer.n_words_row)
+                        ? tile_k_words
+                        : (gemm_layer.n_words_row - w0);
+                const uint32_t max_k_in_tile = tile_words * (32u / bits_per_cb);
+                const uint32_t k_tile =
+                    ((processed_k + max_k_in_tile) <= gemm_layer.input_size)
+                        ? max_k_in_tile
+                        : (gemm_layer.input_size - processed_k);
+
+                sve_gemm_row_compact_fp32_interleaved_4D_same_seq(
+                    &packed_row[w0],
+                    tile_words,
+                    k_tile,
+                    &in_interleaved[((seq0 * gemm_layer.input_size) + processed_k) * 4u],
+                    seq_tile,
+                    gemm_layer.input_size * 4u,
+                    codebook_interleaved,
+                    codebook_size,
+                    &out_interleaved[(seq0 * gemm_layer.output_size) * 4u],
+                    out_idx,
+                    gemm_layer.output_size * 4u,
+                    bias_vals,
+                    (w0 == 0u),
+                    (w0 != 0u),
+                    bits_per_cb);
+
+                processed_k += k_tile;
+            }
+        }
+    }
 }
 
 void gemm_exec_compact_sve_fp32_interleaved_4D_diff_seq(
@@ -510,13 +690,105 @@ void gemm_exec_compact_sve_fp32_interleaved_4D_diff_seq(
     const float *bias_interleaved,
     float *out_interleaved,
     uint8_t bits_per_cb) {
-    gemm_exec_compact_fp32_interleaved_4D_diff_seq(gemm_layer,
-                                                   in_interleaved,
-                                                   weight_idx_interleaved,
-                                                   codebook_interleaved,
-                                                   bias_interleaved,
-                                                   out_interleaved,
-                                                   bits_per_cb);
+    if ((gemm_layer.seq_len == 0u) || (gemm_layer.output_size == 0u)) {
+        return;
+    }
+
+    if ((bits_per_cb == 0u) || (gemm_layer.input_size == 0u) ||
+        (gemm_layer.n_words_row == 0u)) {
+        for (uint32_t seq = 0; seq < gemm_layer.seq_len; seq++) {
+            for (uint32_t out_idx = 0; out_idx < gemm_layer.output_size; out_idx++) {
+                float *out_slot =
+                    &out_interleaved[((seq * gemm_layer.output_size) + out_idx) * 4u];
+                out_slot[0] = (bias_interleaved == NULL)
+                                  ? 0.0f
+                                  : bias_interleaved[out_idx * 4u + 0u];
+                out_slot[1] = (bias_interleaved == NULL)
+                                  ? 0.0f
+                                  : bias_interleaved[out_idx * 4u + 1u];
+                out_slot[2] = (bias_interleaved == NULL)
+                                  ? 0.0f
+                                  : bias_interleaved[out_idx * 4u + 2u];
+                out_slot[3] = (bias_interleaved == NULL)
+                                  ? 0.0f
+                                  : bias_interleaved[out_idx * 4u + 3u];
+            }
+        }
+        return;
+    }
+
+    if (bits_per_cb > 8u) {
+        gemm_exec_compact_fp32_interleaved_4D_diff_seq(gemm_layer,
+                                                       in_interleaved,
+                                                       weight_idx_interleaved,
+                                                       codebook_interleaved,
+                                                       bias_interleaved,
+                                                       out_interleaved,
+                                                       bits_per_cb);
+        return;
+    }
+
+    const uint32_t codebook_size = 1u << bits_per_cb;
+    if (!gemm_sve_codebook_fits_registers(codebook_size)) {
+        gemm_exec_compact_fp32_interleaved_4D_diff_seq(gemm_layer,
+                                                       in_interleaved,
+                                                       weight_idx_interleaved,
+                                                       codebook_interleaved,
+                                                       bias_interleaved,
+                                                       out_interleaved,
+                                                       bits_per_cb);
+        return;
+    }
+
+    const uint32_t tile_seq = gemm_sve_l1_tile_or_full(gemm_layer.seq_len);
+    const uint32_t tile_k_words = gemm_sve_l1_tile_or_full(gemm_layer.n_words_row);
+
+    for (uint32_t out_idx = 0; out_idx < gemm_layer.output_size; out_idx++) {
+        const uint32_t *packed_rows =
+            &weight_idx_interleaved[(out_idx * gemm_layer.n_words_row) * 4u];
+        const float *bias_vals =
+            (bias_interleaved == NULL) ? NULL : &bias_interleaved[out_idx * 4u];
+
+        for (uint32_t seq0 = 0; seq0 < gemm_layer.seq_len; seq0 += tile_seq) {
+            const uint32_t seq_tile =
+                ((seq0 + tile_seq) <= gemm_layer.seq_len)
+                    ? tile_seq
+                    : (gemm_layer.seq_len - seq0);
+
+            uint32_t processed_k = 0;
+            for (uint32_t w0 = 0; w0 < gemm_layer.n_words_row;
+                 w0 += tile_k_words) {
+                const uint32_t tile_words =
+                    ((w0 + tile_k_words) <= gemm_layer.n_words_row)
+                        ? tile_k_words
+                        : (gemm_layer.n_words_row - w0);
+                const uint32_t max_k_in_tile = tile_words * (32u / bits_per_cb);
+                const uint32_t k_tile =
+                    ((processed_k + max_k_in_tile) <= gemm_layer.input_size)
+                        ? max_k_in_tile
+                        : (gemm_layer.input_size - processed_k);
+
+                sve_gemm_row_compact_fp32_interleaved_4D_diff_seq(
+                    &packed_rows[w0 * 4u],
+                    tile_words,
+                    k_tile,
+                    &in_interleaved[((seq0 * gemm_layer.input_size) + processed_k) * 4u],
+                    seq_tile,
+                    gemm_layer.input_size * 4u,
+                    codebook_interleaved,
+                    codebook_size,
+                    &out_interleaved[(seq0 * gemm_layer.output_size) * 4u],
+                    out_idx,
+                    gemm_layer.output_size * 4u,
+                    bias_vals,
+                    (w0 == 0u),
+                    (w0 != 0u),
+                    bits_per_cb);
+
+                processed_k += k_tile;
+            }
+        }
+    }
 }
 
 void gemm_exec_compact_int_sve(gemm_t gemm_layer,
