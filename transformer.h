@@ -64,12 +64,19 @@
 #define D_FF 256
 
 #else
-// Boss Menu (Match codebooked GEMM)
+// BERT-mini
 #define D_Q 64
 #define D_SEQ 512
-#define D_MODEL 768
-#define NUM_HEAD 12
-#define D_FF 3072
+#define D_MODEL 256
+#define NUM_HEAD 4
+#define D_FF 1024
+
+// Boss Menu (BERT-base) (Match codebooked GEMM)
+// #define D_Q 64
+// #define D_SEQ 512
+// #define D_MODEL 768
+// #define NUM_HEAD 12
+// #define D_FF 3072
 #endif
 
 #endif //FVLLMONTITRANSFORMER_TRANSFORMER_H

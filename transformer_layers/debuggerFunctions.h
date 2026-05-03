@@ -23,6 +23,11 @@ void interleave_hidden_flag_zero_free(uint32_t*& kernel, int n_row, int n_col, u
 void printOutputPreview(const uint32_t *out, int size);
 void saveOutput(int size, const uint32_t *array, const std::string &dir_name);
 
+#ifdef SIMD
+uint64_t getSveLengthBytes();
+uint64_t getSveInt32Lanes();
+#endif
+
 // New debug helpers moved from transformerBlock.cc
 
 void printPackedMatrix(const char *label,

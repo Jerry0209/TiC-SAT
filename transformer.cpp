@@ -134,6 +134,14 @@ void test() {
     std::cout << "KERNEL_DIM = " << KERNEL_DIM << std::endl;
     std::cout << "MAX_COL = " << MAX_COL << std::endl;
     std::cout << "SVE_LENGTH = " << (N_SVE_BYTE * 8) << " bits" << std::endl;
+#ifdef SIMD
+    const uint64_t runtime_sve_bytes = getSveLengthBytes();
+    const uint64_t runtime_sve_int32_lanes = getSveInt32Lanes();
+    std::cout << "SVE_LENGTH on Gem5/QEMU = " << runtime_sve_bytes
+              << " bytes = " << (runtime_sve_bytes * 8) << " bits" << std::endl;
+    std::cout << "float lanes = " << runtime_sve_int32_lanes
+              << ", int32 lanes = " << runtime_sve_int32_lanes << std::endl;
+#endif
 
     std::cout << "D_Q = " << D_Q << std::endl;
     std::cout << "D_SEQ = " << D_SEQ << std::endl;
@@ -176,10 +184,14 @@ void test() {
 #endif
 
     const std::size_t learner_count = getTransformerLearnerCount();
+    constexpr bool dump_outputs_enabled =
+        !(CFG_PROFILE_GEMM_ONLY || CFG_GEM5_PROFILE_REGIONS);
     std::cout << "CODEBOOK_REGISTRY_N_LEARNERS = " << learner_count << std::endl;
 
 #if CFG_USE_FP32_TRANSFORMER
-    TransformerFloat::run(learner_count, dir_name + "/multiple_learner_outputs/c");
+    TransformerFloat::run(
+        learner_count,
+        dump_outputs_enabled ? dir_name + "/multiple_learner_outputs/c" : std::string());
     return;
 #endif
 
@@ -228,7 +240,7 @@ void test() {
 #endif
 
     const std::string multiple_learner_output_root = dir_name + "/multiple_learner_outputs/c";
-    if (learner_count > 1) {
+    if (dump_outputs_enabled && learner_count > 1) {
         std::filesystem::create_directories(multiple_learner_output_root);
     }
 
@@ -458,10 +470,13 @@ void test() {
 
             const std::string learner_notebook_weights_dir =
                 getNotebookWeightsDirForLearner(notebook_weights_dir, learner_idx);
-            const std::string learner_dump_dir =
-                multiple_learner_output_root + "/learner" + std::to_string(learner_idx);
+            const std::string learner_dump_dir = dump_outputs_enabled
+                ? (multiple_learner_output_root + "/learner" + std::to_string(learner_idx))
+                : std::string();
 
-            std::filesystem::create_directories(learner_dump_dir);
+            if (!learner_dump_dir.empty()) {
+                std::filesystem::create_directories(learner_dump_dir);
+            }
             grouped_blocks[learner_idx] = buildTransformerBlockForLearner(
                 learner_idx,
                 learner_notebook_weights_dir,
@@ -494,10 +509,13 @@ void test() {
 
             const std::string learner_notebook_weights_dir =
                 getNotebookWeightsDirForLearner(notebook_weights_dir, learner_idx);
-            const std::string learner_dump_dir =
-                multiple_learner_output_root + "/learner" + std::to_string(learner_idx);
+            const std::string learner_dump_dir = dump_outputs_enabled
+                ? (multiple_learner_output_root + "/learner" + std::to_string(learner_idx))
+                : std::string();
 
-            std::filesystem::create_directories(learner_dump_dir);
+            if (!learner_dump_dir.empty()) {
+                std::filesystem::create_directories(learner_dump_dir);
+            }
             grouped_blocks[learner_idx] = buildTransformerBlockForLearner(
                 learner_idx,
                 learner_notebook_weights_dir,
@@ -526,7 +544,7 @@ void test() {
 
         const std::string learner_notebook_weights_dir =
             getNotebookWeightsDirForLearner(notebook_weights_dir, learner_idx);
-        const std::string learner_dump_dir = (learner_count > 1)
+        const std::string learner_dump_dir = (dump_outputs_enabled && learner_count > 1)
             ? (multiple_learner_output_root + "/learner" + std::to_string(learner_idx))
             : std::string();
 

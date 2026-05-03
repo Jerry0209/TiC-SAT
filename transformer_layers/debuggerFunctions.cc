@@ -11,6 +11,22 @@
 #include "codebookDense.h"
 #include "run_mode_config.h"
 
+#ifdef SIMD
+uint64_t getSveLengthBytes()
+{
+    uint64_t vl;
+    asm volatile("cntb %0" : "=r"(vl));
+    return vl;
+}
+
+uint64_t getSveInt32Lanes()
+{
+    uint64_t lanes;
+    asm volatile("cntw %0" : "=r"(lanes));
+    return lanes;
+}
+#endif
+
 void print_weight(uint32_t* kernel, int n_row, int n_col){
     for (int i=0; i< n_row; i++){
         for (int j=0; j<n_col; j++){
@@ -237,7 +253,7 @@ void dumpPackedMatrixIfEnabled(const std::string& dump_dir,
                                const uint32_t* buffer,
                                std::size_t rows,
                                std::size_t cols) {
-#if CFG_GEM5_PROFILE_REGIONS
+#if CFG_PROFILE_GEMM_ONLY || CFG_GEM5_PROFILE_REGIONS
     (void)dump_dir;
     (void)filename;
     (void)buffer;
@@ -251,6 +267,7 @@ void dumpPackedMatrixIfEnabled(const std::string& dump_dir,
 
     const std::string path = dump_dir + "/" + filename;
     savePackedMatrixText(path.c_str(), buffer, rows, cols);
+    std::cout << "[DUMP] packed matrix -> " << path << std::endl;
 #endif
 }
 

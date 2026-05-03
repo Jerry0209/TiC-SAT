@@ -172,7 +172,7 @@ void dumpFloatMatrixIfEnabled(const std::string& dump_dir,
                               const float* data,
                               std::size_t rows,
                               std::size_t cols) {
-#if CFG_GEM5_PROFILE_REGIONS
+#if CFG_PROFILE_GEMM_ONLY || CFG_GEM5_PROFILE_REGIONS
     (void)dump_dir;
     (void)filename;
     (void)data;
@@ -183,7 +183,9 @@ void dumpFloatMatrixIfEnabled(const std::string& dump_dir,
         return;
     }
     std::filesystem::create_directories(dump_dir);
-    saveFloatMatrixText(dump_dir + "/" + filename, data, rows, cols);
+    const std::string path = dump_dir + "/" + filename;
+    saveFloatMatrixText(path, data, rows, cols);
+    std::cout << "[DUMP] float matrix -> " << path << std::endl;
 #endif
 }
 
