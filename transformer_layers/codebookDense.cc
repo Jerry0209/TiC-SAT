@@ -407,24 +407,26 @@ void CodebookDense::computeInterleaved2DSameSeq(std::size_t seq_len,
         }
     }
 
-    std::vector<int32_t> output_acc_interleaved(seq_len * output_size_ * 2u, 0);
-
     gemm_t layer;
     layer.seq_len = static_cast<uint16_t>(seq_len);
     layer.input_size = static_cast<uint16_t>(input_size_);
     layer.output_size = static_cast<uint16_t>(output_size_);
     layer.n_words_row = static_cast<uint16_t>(n_words_row_);
 
+    std::vector<int8_t> output_int8(seq_len * output_size_ * 2u, 0);
+
 #ifdef SIMD
-    gemm_exec_compact_int_sve_interleaved_2D_same_seq(
+    gemm_exec_compact_int_sve_interleaved_2D_same_seq_to_int8(
         layer,
         input_interleaved.data(),
         weight_idx_,
         codebook_interleaved_q_.data(),
         bias_interleaved_q_.empty() ? nullptr : bias_interleaved_q_.data(),
-        output_acc_interleaved.data(),
+        output_int8.data(),
         bits_per_cb_);
 #else
+    std::vector<int32_t> output_acc_interleaved(seq_len * output_size_ * 2u, 0);
+
     gemm_exec_compact_int_interleaved_2D_same_seq(
         layer,
         input_interleaved.data(),
@@ -433,12 +435,10 @@ void CodebookDense::computeInterleaved2DSameSeq(std::size_t seq_len,
         bias_interleaved_q_.empty() ? nullptr : bias_interleaved_q_.data(),
         output_acc_interleaved.data(),
         bits_per_cb_);
-#endif
-
-    std::vector<int8_t> output_int8(seq_len * output_size_ * 2u, 0);
     for (std::size_t idx = 0; idx < output_acc_interleaved.size(); idx++) {
         output_int8[idx] = static_cast<int8_t>(output_acc_interleaved[idx]);
     }
+#endif
 
     std::vector<int8_t> learner_output(seq_len * output_size_, 0);
     for (std::size_t learner = 0; learner < 2u; learner++) {
@@ -459,8 +459,6 @@ void CodebookDense::computeInterleaved2DToInt8(std::size_t seq_len,
         throw std::runtime_error("CodebookDense interleaved 2D pipeline path is not available");
     }
 
-    std::vector<int32_t> output_acc_interleaved(seq_len * output_size_ * 2u, 0);
-
     gemm_t layer;
     layer.seq_len = static_cast<uint16_t>(seq_len);
     layer.input_size = static_cast<uint16_t>(input_size_);
@@ -468,15 +466,17 @@ void CodebookDense::computeInterleaved2DToInt8(std::size_t seq_len,
     layer.n_words_row = static_cast<uint16_t>(n_words_row_);
 
 #ifdef SIMD
-    gemm_exec_compact_int_sve_interleaved_2D_same_seq(
+    gemm_exec_compact_int_sve_interleaved_2D_same_seq_to_int8(
         layer,
         input_interleaved,
         weight_idx_,
         codebook_interleaved_q_.data(),
         bias_interleaved_q_.empty() ? nullptr : bias_interleaved_q_.data(),
-        output_acc_interleaved.data(),
+        output_interleaved,
         bits_per_cb_);
 #else
+    std::vector<int32_t> output_acc_interleaved(seq_len * output_size_ * 2u, 0);
+
     gemm_exec_compact_int_interleaved_2D_same_seq(
         layer,
         input_interleaved,
@@ -485,11 +485,11 @@ void CodebookDense::computeInterleaved2DToInt8(std::size_t seq_len,
         bias_interleaved_q_.empty() ? nullptr : bias_interleaved_q_.data(),
         output_acc_interleaved.data(),
         bits_per_cb_);
-#endif
 
     for (std::size_t idx = 0; idx < output_acc_interleaved.size(); idx++) {
         output_interleaved[idx] = static_cast<int8_t>(output_acc_interleaved[idx]);
     }
+#endif
 }
 
 // Execute 4 learners together using the shared interleaved layout:
@@ -514,37 +514,39 @@ void CodebookDense::computeInterleaved4DDiffSeq(std::size_t seq_len,
         }
     }
 
-    std::vector<int32_t> output_acc_interleaved(seq_len * output_size_ * 4u, 0);
-
     gemm_t layer;
     layer.seq_len = static_cast<uint16_t>(seq_len);
     layer.input_size = static_cast<uint16_t>(input_size_);
     layer.output_size = static_cast<uint16_t>(output_size_);
     layer.n_words_row = static_cast<uint16_t>(n_words_row_);
 
+    std::vector<int8_t> output_int8(seq_len * output_size_ * 4u, 0);
+
 #ifdef SIMD
     if (same_seq_) {
         // Shared-index path: one packed index stream drives all 4 learners.
-        gemm_exec_compact_int_sve_interleaved_4D_same_seq(
+        gemm_exec_compact_int_sve_interleaved_4D_same_seq_to_int8(
             layer,
             input_interleaved.data(),
             weight_idx_,
             codebook_interleaved_q_.data(),
             bias_interleaved_q_.empty() ? nullptr : bias_interleaved_q_.data(),
-            output_acc_interleaved.data(),
+            output_int8.data(),
             bits_per_cb_);
     } else {
         // Per-learner index path: each learner has its own packed index stream.
-        gemm_exec_compact_int_sve_interleaved_4D_diff_seq(
+        gemm_exec_compact_int_sve_interleaved_4D_diff_seq_to_int8(
             layer,
             input_interleaved.data(),
             weight_idx_interleaved_,
             codebook_interleaved_q_.data(),
             bias_interleaved_q_.empty() ? nullptr : bias_interleaved_q_.data(),
-            output_acc_interleaved.data(),
+            output_int8.data(),
             bits_per_cb_);
     }
 #else
+    std::vector<int32_t> output_acc_interleaved(seq_len * output_size_ * 4u, 0);
+
     if (same_seq_) {
         gemm_exec_compact_int_interleaved_4D_same_seq(
             layer,
@@ -564,12 +566,10 @@ void CodebookDense::computeInterleaved4DDiffSeq(std::size_t seq_len,
             output_acc_interleaved.data(),
             bits_per_cb_);
     }
-#endif
-
-    std::vector<int8_t> output_int8(seq_len * output_size_ * 4u, 0);
     for (std::size_t idx = 0; idx < output_acc_interleaved.size(); idx++) {
         output_int8[idx] = static_cast<int8_t>(output_acc_interleaved[idx]);
     }
+#endif
 
     std::vector<int8_t> learner_output(seq_len * output_size_, 0);
     for (std::size_t learner = 0; learner < 4u; learner++) {
@@ -590,8 +590,6 @@ void CodebookDense::computeInterleaved4DToInt8(std::size_t seq_len,
         throw std::runtime_error("CodebookDense interleaved 4D pipeline path is not available");
     }
 
-    std::vector<int32_t> output_acc_interleaved(seq_len * output_size_ * 4u, 0);
-
     gemm_t layer;
     layer.seq_len = static_cast<uint16_t>(seq_len);
     layer.input_size = static_cast<uint16_t>(input_size_);
@@ -600,25 +598,27 @@ void CodebookDense::computeInterleaved4DToInt8(std::size_t seq_len,
 
 #ifdef SIMD
     if (same_seq_) {
-        gemm_exec_compact_int_sve_interleaved_4D_same_seq(
+        gemm_exec_compact_int_sve_interleaved_4D_same_seq_to_int8(
             layer,
             input_interleaved,
             weight_idx_,
             codebook_interleaved_q_.data(),
             bias_interleaved_q_.empty() ? nullptr : bias_interleaved_q_.data(),
-            output_acc_interleaved.data(),
+            output_interleaved,
             bits_per_cb_);
     } else {
-        gemm_exec_compact_int_sve_interleaved_4D_diff_seq(
+        gemm_exec_compact_int_sve_interleaved_4D_diff_seq_to_int8(
             layer,
             input_interleaved,
             weight_idx_interleaved_,
             codebook_interleaved_q_.data(),
             bias_interleaved_q_.empty() ? nullptr : bias_interleaved_q_.data(),
-            output_acc_interleaved.data(),
+            output_interleaved,
             bits_per_cb_);
     }
 #else
+    std::vector<int32_t> output_acc_interleaved(seq_len * output_size_ * 4u, 0);
+
     if (same_seq_) {
         gemm_exec_compact_int_interleaved_4D_same_seq(
             layer,
@@ -638,11 +638,11 @@ void CodebookDense::computeInterleaved4DToInt8(std::size_t seq_len,
             output_acc_interleaved.data(),
             bits_per_cb_);
     }
-#endif
 
     for (std::size_t idx = 0; idx < output_acc_interleaved.size(); idx++) {
         output_interleaved[idx] = static_cast<int8_t>(output_acc_interleaved[idx]);
     }
+#endif
 }
 
 
