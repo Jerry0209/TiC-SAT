@@ -77,6 +77,7 @@
 // #define D_MODEL 768
 // #define NUM_HEAD 12
 // #define D_FF 3072
+
 #endif
 
 #endif //FVLLMONTITRANSFORMER_TRANSFORMER_H

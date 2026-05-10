@@ -5,359 +5,15 @@
 #include "transformerBlock.h"
 #include "debuggerFunctions.h"
 #include <algorithm>
-#include <cstdlib>
 #include <iostream>
-#include <fstream>
-#include <stdexcept>
+#include <string>
+#include <vector>
 
 #include "layerFactory.h"
+#include "profile.h"
 #include "run_mode_config.h"
-#include "codebookDense.h"
 #include "interleavedPipeline.h"
-
-
-namespace {
-
-bool m5Available() {
-    static int cached_m5_available = -1;
-    if (cached_m5_available < 0) {
-        cached_m5_available =
-            (std::system("command -v m5 >/dev/null 2>&1") == 0) ? 1 : 0;
-    }
-    return cached_m5_available == 1;
-}
-
-void runM5IfAvailable(const char* command) {
-    if (m5Available()) {
-        std::system(command);
-    }
-}
-
-#if CFG_GEM5_PROFILE_REGIONS
-const char* kGem5ProfileIndexPath = "gem5_profile_regions.tsv";
-std::size_t gem5_profile_dump_index = 0;
-
-void resetTransformerStatsWindow(const char* scope) {
-    gem5_profile_dump_index = 0;
-
-    std::ofstream index(kGem5ProfileIndexPath);
-    if (index.is_open()) {
-        index << "scope\t" << scope << "\n";
-        index << "dump_index\tcheckpoint\tinterval_since_previous\n";
-    }
-
-    std::cout << "[GEM5_PROFILE] reset scope=" << scope << std::endl;
-    runM5IfAvailable("m5 resetstats");
-}
-
-void dumpTransformerStatsCheckpoint(const char* checkpoint,
-                                    const char* interval_since_previous) {
-    gem5_profile_dump_index++;
-
-    std::ofstream index(kGem5ProfileIndexPath, std::ios::app);
-    if (index.is_open()) {
-        index << gem5_profile_dump_index << "\t"
-              << checkpoint << "\t"
-              << interval_since_previous << "\n";
-    }
-
-    std::cout << "[GEM5_PROFILE] dump " << gem5_profile_dump_index
-              << " checkpoint=" << checkpoint
-              << " interval=" << interval_since_previous << std::endl;
-    runM5IfAvailable("m5 dumpstats");
-}
-
-void dumpTransformerStatsCheckpointIfProfiling(const char* checkpoint,
-                                               const char* interval_since_previous) {
-    dumpTransformerStatsCheckpoint(checkpoint, interval_since_previous);
-}
-
-void dumpTransformerStatsLegacyBoundary(const char* checkpoint,
-                                        const char* interval_since_previous) {
-    dumpTransformerStatsCheckpoint(checkpoint, interval_since_previous);
-}
-#else
-void resetTransformerStatsWindow(const char*) {
-    runM5IfAvailable("m5 resetstats");
-}
-
-void dumpTransformerStatsCheckpointIfProfiling(const char*, const char*) {
-}
-
-void dumpTransformerStatsLegacyBoundary(const char*, const char*) {
-    runM5IfAvailable("m5 dumpresetstats");
-}
-#endif
-
-#if CFG_FULL_INTERLEAVED_PIPELINE
-CodebookDense* requireInterleavedCodebookDense2(const char* label,
-                                                LinearLayer* const layers[2]) {
-    auto* primary = dynamic_cast<CodebookDense*>(layers[0]);
-    if (primary == nullptr || !primary->supportsInterleaved2DSameSeq()) {
-        throw std::runtime_error(std::string(label) + " does not support the 2D interleaved pipeline");
-    }
-
-    for (std::size_t learner = 1; learner < 2u; learner++) {
-        auto* layer = dynamic_cast<CodebookDense*>(layers[learner]);
-        if (layer == nullptr || !layer->supportsInterleaved2DSameSeq()) {
-            throw std::runtime_error(std::string(label) + " learner layer does not support the 2D interleaved pipeline");
-        }
-    }
-
-    return primary;
-}
-
-CodebookDense* requireInterleavedCodebookDense4(const char* label,
-                                                LinearLayer* const layers[4]) {
-    auto* primary = dynamic_cast<CodebookDense*>(layers[0]);
-    if (primary == nullptr || !primary->supportsInterleaved4DDiffSeq()) {
-        throw std::runtime_error(std::string(label) + " does not support the 4D interleaved pipeline");
-    }
-
-    for (std::size_t learner = 1; learner < 4u; learner++) {
-        auto* layer = dynamic_cast<CodebookDense*>(layers[learner]);
-        if (layer == nullptr || !layer->supportsInterleaved4DDiffSeq()) {
-            throw std::runtime_error(std::string(label) + " learner layer does not support the 4D interleaved pipeline");
-        }
-    }
-
-    return primary;
-}
-
-void computeCodebookDenseInterleaved2D(const char* label,
-                                       LinearLayer* const layers[2],
-                                       std::size_t seq_len,
-                                       const int8_t* input_interleaved,
-                                       int8_t* output_interleaved) {
-    CodebookDense* primary = requireInterleavedCodebookDense2(label, layers);
-    primary->computeInterleaved2DToInt8(seq_len, input_interleaved, output_interleaved);
-}
-
-void computeCodebookDenseInterleaved4D(const char* label,
-                                       LinearLayer* const layers[4],
-                                       std::size_t seq_len,
-                                       const int8_t* input_interleaved,
-                                       int8_t* output_interleaved) {
-    CodebookDense* primary = requireInterleavedCodebookDense4(label, layers);
-    primary->computeInterleaved4DToInt8(seq_len, input_interleaved, output_interleaved);
-}
-
-#if CFG_ENABLE_DEBUG_PRINT
-void printInterleavedPackedPreview2D(const char* label,
-                                     const int8_t* input_interleaved,
-                                     std::size_t rows,
-                                     std::size_t cols,
-                                     std::size_t learner) {
-    std::vector<uint32_t> packed((rows * cols) >> 2, 0u);
-    packInterleavedLearner2(rows, cols, input_interleaved, learner, packed.data());
-    printPackedPreview(label, packed.data(), packed.size());
-}
-
-void printInterleavedPackedPreview4D(const char* label,
-                                     const int8_t* input_interleaved,
-                                     std::size_t rows,
-                                     std::size_t cols,
-                                     std::size_t learner) {
-    std::vector<uint32_t> packed((rows * cols) >> 2, 0u);
-    packInterleavedLearner4(rows, cols, input_interleaved, learner, packed.data());
-    printPackedPreview(label, packed.data(), packed.size());
-}
-#endif
-
-#if CFG_USE_CODEBOOK_REFERENCE
-void compareInterleavedDenseReference2D(const char* label,
-                                        LinearLayer* const references[2],
-                                        uint32_t* const reference_outputs[2],
-                                        const std::size_t learner_ids[2],
-                                        std::size_t seq_len,
-                                        std::size_t input_cols,
-                                        std::size_t output_cols,
-                                        const int8_t* input_interleaved,
-                                        const int8_t* candidate_interleaved) {
-    std::vector<uint32_t> packed_input((seq_len * input_cols) >> 2, 0u);
-    std::vector<uint32_t> packed_candidate((seq_len * output_cols) >> 2, 0u);
-
-    for (std::size_t learner = 0; learner < 2u; learner++) {
-        std::fill(reference_outputs[learner],
-                  reference_outputs[learner] + ((seq_len * output_cols) >> 2),
-                  0u);
-        std::fill(packed_input.begin(), packed_input.end(), 0u);
-        std::fill(packed_candidate.begin(), packed_candidate.end(), 0u);
-
-        packInterleavedLearner2(
-            seq_len,
-            input_cols,
-            input_interleaved,
-            learner,
-            packed_input.data());
-        packInterleavedLearner2(
-            seq_len,
-            output_cols,
-            candidate_interleaved,
-            learner,
-            packed_candidate.data());
-
-        references[learner]->compute(
-            seq_len,
-            packed_input.data(),
-            reference_outputs[learner]);
-
-        const std::string learner_label =
-            std::string(label) + "_learner" + std::to_string(learner_ids[learner]);
-        comparePackedBuffers(
-            learner_label.c_str(),
-            reference_outputs[learner],
-            packed_candidate.data(),
-            (seq_len * output_cols) >> 2);
-    }
-}
-
-void compareInterleavedDenseReference4D(const char* label,
-                                        LinearLayer* const references[4],
-                                        uint32_t* const reference_outputs[4],
-                                        const std::size_t learner_ids[4],
-                                        std::size_t seq_len,
-                                        std::size_t input_cols,
-                                        std::size_t output_cols,
-                                        const int8_t* input_interleaved,
-                                        const int8_t* candidate_interleaved) {
-    std::vector<uint32_t> packed_input((seq_len * input_cols) >> 2, 0u);
-    std::vector<uint32_t> packed_candidate((seq_len * output_cols) >> 2, 0u);
-
-    for (std::size_t learner = 0; learner < 4u; learner++) {
-        std::fill(reference_outputs[learner],
-                  reference_outputs[learner] + ((seq_len * output_cols) >> 2),
-                  0u);
-        std::fill(packed_input.begin(), packed_input.end(), 0u);
-        std::fill(packed_candidate.begin(), packed_candidate.end(), 0u);
-
-        packInterleavedLearner4(
-            seq_len,
-            input_cols,
-            input_interleaved,
-            learner,
-            packed_input.data());
-        packInterleavedLearner4(
-            seq_len,
-            output_cols,
-            candidate_interleaved,
-            learner,
-            packed_candidate.data());
-
-        references[learner]->compute(
-            seq_len,
-            packed_input.data(),
-            reference_outputs[learner]);
-
-        const std::string learner_label =
-            std::string(label) + "_learner" + std::to_string(learner_ids[learner]);
-        comparePackedBuffers(
-            learner_label.c_str(),
-            reference_outputs[learner],
-            packed_candidate.data(),
-            (seq_len * output_cols) >> 2);
-    }
-}
-
-void compareInterleavedAddNormReference2D(const char* label,
-                                          AddNormalize* add_norm,
-                                          const std::size_t learner_ids[2],
-                                          std::size_t seq_len,
-                                          std::size_t cols,
-                                          const int8_t* residual_interleaved,
-                                          const int8_t* pre_addnorm_interleaved,
-                                          const int8_t* candidate_interleaved) {
-    std::vector<uint32_t> packed_residual((seq_len * cols) >> 2, 0u);
-    std::vector<uint32_t> packed_reference((seq_len * cols) >> 2, 0u);
-    std::vector<uint32_t> packed_candidate((seq_len * cols) >> 2, 0u);
-
-    for (std::size_t learner = 0; learner < 2u; learner++) {
-        std::fill(packed_residual.begin(), packed_residual.end(), 0u);
-        std::fill(packed_reference.begin(), packed_reference.end(), 0u);
-        std::fill(packed_candidate.begin(), packed_candidate.end(), 0u);
-
-        packInterleavedLearner2(
-            seq_len,
-            cols,
-            residual_interleaved,
-            learner,
-            packed_residual.data());
-        packInterleavedLearner2(
-            seq_len,
-            cols,
-            pre_addnorm_interleaved,
-            learner,
-            packed_reference.data());
-        packInterleavedLearner2(
-            seq_len,
-            cols,
-            candidate_interleaved,
-            learner,
-            packed_candidate.data());
-
-        add_norm->compute(packed_residual.data(), packed_reference.data());
-
-        const std::string learner_label =
-            std::string(label) + "_learner" + std::to_string(learner_ids[learner]);
-        comparePackedBuffers(
-            learner_label.c_str(),
-            packed_reference.data(),
-            packed_candidate.data(),
-            (seq_len * cols) >> 2);
-    }
-}
-
-void compareInterleavedAddNormReference4D(const char* label,
-                                          AddNormalize* add_norm,
-                                          const std::size_t learner_ids[4],
-                                          std::size_t seq_len,
-                                          std::size_t cols,
-                                          const int8_t* residual_interleaved,
-                                          const int8_t* pre_addnorm_interleaved,
-                                          const int8_t* candidate_interleaved) {
-    std::vector<uint32_t> packed_residual((seq_len * cols) >> 2, 0u);
-    std::vector<uint32_t> packed_reference((seq_len * cols) >> 2, 0u);
-    std::vector<uint32_t> packed_candidate((seq_len * cols) >> 2, 0u);
-
-    for (std::size_t learner = 0; learner < 4u; learner++) {
-        std::fill(packed_residual.begin(), packed_residual.end(), 0u);
-        std::fill(packed_reference.begin(), packed_reference.end(), 0u);
-        std::fill(packed_candidate.begin(), packed_candidate.end(), 0u);
-
-        packInterleavedLearner4(
-            seq_len,
-            cols,
-            residual_interleaved,
-            learner,
-            packed_residual.data());
-        packInterleavedLearner4(
-            seq_len,
-            cols,
-            pre_addnorm_interleaved,
-            learner,
-            packed_reference.data());
-        packInterleavedLearner4(
-            seq_len,
-            cols,
-            candidate_interleaved,
-            learner,
-            packed_candidate.data());
-
-        add_norm->compute(packed_residual.data(), packed_reference.data());
-
-        const std::string learner_label =
-            std::string(label) + "_learner" + std::to_string(learner_ids[learner]);
-        comparePackedBuffers(
-            learner_label.c_str(),
-            packed_reference.data(),
-            packed_candidate.data(),
-            (seq_len * cols) >> 2);
-    }
-}
-#endif
-#endif
-
-} // namespace
+#include "transformerBlockInterleavedHelpers.h"
 
 TransformerBlock::TransformerBlock(std::size_t pre_seq_len,
                                    std::size_t input_dim,
@@ -481,9 +137,12 @@ TransformerBlock::~TransformerBlock() {
 }
 
 void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* output) {
+    // Start the measured window at the transformer block itself, excluding
+    // earlier setup work from the gem5 stats.
     resetTransformerStatsWindow("single_transformer_block");
 
-    // Compute each attention head output independently.
+    // Compute each attention head independently and place it in the slice that
+    // later forms the concatenated multi-head activation.
     for (std::size_t n = 0; n < num_heads_; ++n) {
         std::cout << "Head : " << n << std::endl;
         selfatten_[n]->compute(
@@ -513,9 +172,12 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* o
         multihead_for_condense,
         seq_len,
         num_heads_ * head_hidden_size_);
+    // In region mode this is a cumulative snapshot; subtract it from the next
+    // snapshot to isolate the following Projection interval.
     dumpTransformerStatsCheckpointIfProfiling("after_mha", "MHA");
 
     std::cout << "Condense" << std::endl;
+    // Projection maps concatenated heads back to D_MODEL.
     condense->compute(seq_len, multihead_for_condense, condense_out);
 
     dumpPackedMatrixIfEnabled(
@@ -548,6 +210,7 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* o
 #ifdef BWMA
     addNorm->computeRearranged(input, condense_out);
 #else
+    // AddNorm mutates condense_out in place after adding the residual input.
     addNorm->compute(input, condense_out); // Directly modify condense_out itself to be the output of addNorm
 #endif
 
@@ -575,9 +238,10 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* o
 
 #endif
 
-    dumpTransformerStatsLegacyBoundary("after_attn_addnorm", "non_GEMM_after_projection");
+    dumpTransformerStatsCheckpointIfProfiling("after_attn_addnorm", "non_GEMM_after_projection");
 
     std::cout << "Feed Forward 0" << std::endl;
+    // FF0 expands the hidden dimension into the feed-forward width.
     feedForward0->compute(seq_len, condense_out, intermediateFF);
 
     dumpPackedMatrixIfEnabled(
@@ -611,6 +275,7 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* o
 #endif
 
     std::cout << "Feed Forward 1" << std::endl;
+    // FF1 contracts the feed-forward activation back into D_MODEL.
     feedForward1->compute(seq_len, intermediateFF, output);
 
     dumpPackedMatrixIfEnabled(
@@ -651,6 +316,7 @@ void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* o
 #ifdef BWMA
     addNorm->computeRearranged(condense_out, output);
 #else
+    // The final residual uses the post-attention activation as the skip tensor.
     addNorm->compute(condense_out, output);
 #endif
 
@@ -700,6 +366,8 @@ void TransformerBlock::computeGroupImpl(std::size_t seq_len,
     }
 #endif
 
+    // Non-interleaved grouped mode keeps learner buffers separate, but runs the
+    // same stage for every learner before moving to the next transformer stage.
     resetTransformerStatsWindow("grouped_transformer_block");
 
     for (std::size_t n = 0; n < blocks[0]->num_heads_; ++n) {
@@ -756,6 +424,8 @@ void TransformerBlock::computeGroupImpl(std::size_t seq_len,
     auto tryGroupedCodebookDense = [&](LinearLayer* const layers[LearnerCount],
                                        uint32_t* const dense_inputs[LearnerCount],
                                        uint32_t* const dense_outputs[LearnerCount]) {
+        // CodebookDense can run grouped learners together; Dense fallback stays
+        // per learner so validation and non-codebook configs keep working.
         if constexpr (LearnerCount == 2u) {
             return tryComputeGroupedCodebookDense2(layers, seq_len, dense_inputs, dense_outputs);
         } else {
@@ -835,7 +505,7 @@ void TransformerBlock::computeGroupImpl(std::size_t seq_len,
 #endif
     }
 
-    dumpTransformerStatsLegacyBoundary("after_attn_addnorm", "non_GEMM_after_projection");
+    dumpTransformerStatsCheckpointIfProfiling("after_attn_addnorm", "non_GEMM_after_projection");
 
     std::cout << "Feed Forward 0" << std::endl;
     LinearLayer* ff0_layers[LearnerCount];
@@ -980,6 +650,8 @@ void TransformerBlock::computeGroup2FullInterleaved(std::size_t seq_len,
                                                     TransformerBlock* blocks[2],
                                                     uint32_t* const inputs[2],
                                                     uint32_t* const outputs[2]) {
+    // Full-interleaved mode keeps both learners in one [seq][feature][learner]
+    // buffer, so attention, AddNorm, and CodebookDense avoid repeated packing.
     resetTransformerStatsWindow("group2_full_interleaved_transformer_block");
 
     std::string dump_dirs[2];
@@ -999,6 +671,7 @@ void TransformerBlock::computeGroup2FullInterleaved(std::size_t seq_len,
     const std::size_t ff_size = blocks[0]->ff_size_;
 
     std::vector<int8_t> input_interleaved(seq_len * input_dim * 2u, 0);
+    // Convert the packed per-learner inputs into lane-adjacent int8 values.
     interleavePackedLearners2(seq_len, input_dim, inputs, input_interleaved.data());
 
     std::vector<int8_t> multihead_interleaved(
@@ -1045,6 +718,8 @@ void TransformerBlock::computeGroup2FullInterleaved(std::size_t seq_len,
     }
 
     std::vector<int8_t> condense_interleaved(seq_len * input_dim * 2u, 0);
+    // The interleaved CodebookDense call consumes and produces the same
+    // [seq][feature][learner] layout.
     computeCodebookDenseInterleaved2D(
         "condense",
         condense_layers,
@@ -1106,7 +781,7 @@ void TransformerBlock::computeGroup2FullInterleaved(std::size_t seq_len,
         seq_len,
         input_dim);
 
-    dumpTransformerStatsLegacyBoundary("after_attn_addnorm", "non_GEMM_after_projection");
+    dumpTransformerStatsCheckpointIfProfiling("after_attn_addnorm", "non_GEMM_after_projection");
 
     std::cout << "Feed Forward 0" << std::endl;
     LinearLayer* ff0_layers[2];
@@ -1115,6 +790,7 @@ void TransformerBlock::computeGroup2FullInterleaved(std::size_t seq_len,
     }
 
     std::vector<int8_t> ff0_interleaved(seq_len * ff_size * 2u, 0);
+    // FF0 expands both learners together while preserving the interleaved layout.
     computeCodebookDenseInterleaved2D(
         "ff0",
         ff0_layers,
@@ -1169,6 +845,7 @@ void TransformerBlock::computeGroup2FullInterleaved(std::size_t seq_len,
     }
 
     std::vector<int8_t> ff1_interleaved(seq_len * input_dim * 2u, 0);
+    // FF1 returns both learners to D_MODEL before the final residual AddNorm.
     computeCodebookDenseInterleaved2D(
         "ff1",
         ff1_layers,
@@ -1243,6 +920,7 @@ void TransformerBlock::computeGroup2FullInterleaved(std::size_t seq_len,
         seq_len,
         input_dim);
 
+    // Pack the final int8 lanes back into the caller's per-learner uint32 buffers.
     packInterleavedLearners2(seq_len, input_dim, ff1_interleaved.data(), outputs);
 
     dumpTransformerStatsLegacyBoundary("final_total", "non_GEMM_after_ff2");
@@ -1252,6 +930,8 @@ void TransformerBlock::computeGroup4FullInterleaved(std::size_t seq_len,
                                                     TransformerBlock* blocks[4],
                                                     uint32_t* const inputs[4],
                                                     uint32_t* const outputs[4]) {
+    // The 4D path is the same idea as 2D, with four learners packed into the
+    // innermost lane of the activation buffers.
     resetTransformerStatsWindow("group4_full_interleaved_transformer_block");
 
     std::string dump_dirs[4];
@@ -1271,6 +951,7 @@ void TransformerBlock::computeGroup4FullInterleaved(std::size_t seq_len,
     const std::size_t ff_size = blocks[0]->ff_size_;
 
     std::vector<int8_t> input_interleaved(seq_len * input_dim * 4u, 0);
+    // Convert four packed learner tensors into one [seq][feature][learner] tensor.
     interleavePackedLearners4(seq_len, input_dim, inputs, input_interleaved.data());
 
     std::vector<int8_t> multihead_interleaved(
@@ -1317,6 +998,7 @@ void TransformerBlock::computeGroup4FullInterleaved(std::size_t seq_len,
     }
 
     std::vector<int8_t> condense_interleaved(seq_len * input_dim * 4u, 0);
+    // The diff-seq/same-seq choice is hidden inside the CodebookDense helper.
     computeCodebookDenseInterleaved4D(
         "condense",
         condense_layers,
@@ -1378,7 +1060,7 @@ void TransformerBlock::computeGroup4FullInterleaved(std::size_t seq_len,
         seq_len,
         input_dim);
 
-    dumpTransformerStatsLegacyBoundary("after_attn_addnorm", "non_GEMM_after_projection");
+    dumpTransformerStatsCheckpointIfProfiling("after_attn_addnorm", "non_GEMM_after_projection");
 
     std::cout << "Feed Forward 0" << std::endl;
     LinearLayer* ff0_layers[4];
@@ -1387,6 +1069,7 @@ void TransformerBlock::computeGroup4FullInterleaved(std::size_t seq_len,
     }
 
     std::vector<int8_t> ff0_interleaved(seq_len * ff_size * 4u, 0);
+    // FF0 expands all four learners together.
     computeCodebookDenseInterleaved4D(
         "ff0",
         ff0_layers,
@@ -1441,6 +1124,7 @@ void TransformerBlock::computeGroup4FullInterleaved(std::size_t seq_len,
     }
 
     std::vector<int8_t> ff1_interleaved(seq_len * input_dim * 4u, 0);
+    // FF1 contracts all four learners back to D_MODEL.
     computeCodebookDenseInterleaved4D(
         "ff1",
         ff1_layers,
@@ -1515,6 +1199,7 @@ void TransformerBlock::computeGroup4FullInterleaved(std::size_t seq_len,
         seq_len,
         input_dim);
 
+    // Restore the public per-learner packed representation expected by callers.
     packInterleavedLearners4(seq_len, input_dim, ff1_interleaved.data(), outputs);
 
     dumpTransformerStatsLegacyBoundary("final_total", "non_GEMM_after_ff2");

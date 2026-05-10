@@ -1,5 +1,6 @@
 #include "transformerFloat.h"
 
+#include "profile.h"
 #include "run_mode_config.h"
 
 #if CFG_USE_FP32_TRANSFORMER
@@ -247,6 +248,46 @@ void printInterleavedFloatPreview(const std::string& label,
     (void)learner_count;
     (void)learner;
 #endif
+}
+
+std::string checkpointLabel(const char* base, const std::string& suffix) {
+    if (suffix.empty()) {
+        return base;
+    }
+    return std::string(base) + suffix;
+}
+
+void dumpFp32ProfileCheckpoint(const char* checkpoint,
+                               const char* interval_since_previous,
+                               const std::string& suffix = "") {
+    const std::string checkpoint_name = checkpointLabel(checkpoint, suffix);
+    const std::string interval_name = checkpointLabel(interval_since_previous, suffix);
+    dumpTransformerStatsCheckpointIfProfiling(checkpoint_name.c_str(),
+                                              interval_name.c_str());
+}
+
+void dumpFp32ProfileFinal(const char* checkpoint,
+                          const char* interval_since_previous,
+                          const std::string& suffix = "") {
+    const std::string checkpoint_name = checkpointLabel(checkpoint, suffix);
+    const std::string interval_name = checkpointLabel(interval_since_previous, suffix);
+    dumpTransformerStatsCheckpointIfProfiling(checkpoint_name.c_str(),
+                                              interval_name.c_str());
+}
+
+const char* fp32ProfileScope(std::size_t learner_count) {
+#if CFG_FULL_INTERLEAVED_PIPELINE
+    if (learner_count == 2u) {
+        return "fp32_group2_full_interleaved_transformer_block";
+    }
+    if (learner_count == 4u) {
+        return "fp32_group4_full_interleaved_transformer_block";
+    }
+#endif
+    if (learner_count > 1u) {
+        return "fp32_grouped_non_interleaved_transformer_block";
+    }
+    return "fp32_single_transformer_block";
 }
 
 void dense1D(const std::string& layer_name,
@@ -650,9 +691,13 @@ void deinterleaveOutputs(const Matrix& input_interleaved,
 void transformerBlock1D(std::size_t learner,
                         const Matrix& input,
                         const std::string& dump_dir,
-                        Matrix& output) {
+                        Matrix& output,
+                        const std::string& profile_suffix,
+                        bool final_checkpoint_is_total) {
     Matrix multihead(D_SEQ * D_MODEL, 0.0f);
 
+    // Each head builds its own Q/K/V tensors, runs scaled dot-product attention,
+    // and writes its slice into the packed multi-head activation buffer.
     for (std::size_t head = 0; head < NUM_HEAD; head++) {
         std::cout << "Head : " << head << std::endl;
         Matrix head_out;
@@ -666,34 +711,74 @@ void transformerBlock1D(std::size_t learner,
     }
 
     dumpFloatMatrixIfEnabled(dump_dir, "multihead_out.txt", multihead.data(), D_SEQ, D_MODEL);
+    dumpFp32ProfileCheckpoint("after_mha", "MHA", profile_suffix);
 
     std::cout << "Condense" << std::endl;
     Matrix condense;
+    // Projection folds the concatenated head output back to D_MODEL.
     dense1D("condense", learner, multihead.data(), D_SEQ, condense);
     dumpFloatMatrixIfEnabled(dump_dir, "condense_out.txt", condense.data(), D_SEQ, D_MODEL);
+    dumpFp32ProfileCheckpoint("after_projection", "Projection", profile_suffix);
 
     std::cout << "Add Norm" << std::endl;
+    // The first residual path adds the original block input before layer norm.
     addNorm1D(input.data(), condense.data(), D_SEQ, D_MODEL);
     dumpFloatMatrixIfEnabled(dump_dir, "after_attn_addnorm.txt", condense.data(), D_SEQ, D_MODEL);
+    dumpFp32ProfileCheckpoint("after_attn_addnorm",
+                              "non_GEMM_after_projection",
+                              profile_suffix);
 
     std::cout << "Feed Forward 0" << std::endl;
     Matrix ff0;
+    // FF0 expands the hidden dimension to the feed-forward width.
     dense1D("ff0", learner, condense.data(), D_SEQ, ff0);
     dumpFloatMatrixIfEnabled(dump_dir, "ff0_out.txt", ff0.data(), D_SEQ, D_FF);
     printFloatPreview("ffn0_learner" + std::to_string(learner), ff0.data(), ff0.size());
+    dumpFp32ProfileCheckpoint("after_ff1", "FF1", profile_suffix);
 
     std::cout << "Feed Forward 1" << std::endl;
     Matrix ff1;
+    // FF1 projects the expanded feed-forward activation back to D_MODEL.
     dense1D("ff1", learner, ff0.data(), D_SEQ, ff1);
     dumpFloatMatrixIfEnabled(dump_dir, "ff1_out.txt", ff1.data(), D_SEQ, D_MODEL);
     printFloatPreview("ffn1_pre_addnorm_learner" + std::to_string(learner), ff1.data(), ff1.size());
+    dumpFp32ProfileCheckpoint("after_ff2", "FF2", profile_suffix);
 
     std::cout << "Add Norm" << std::endl;
     output = ff1;
+    // The second residual path uses the post-attention activation as the skip tensor.
     addNorm1D(condense.data(), output.data(), D_SEQ, D_MODEL);
     dumpFloatMatrixIfEnabled(dump_dir, "final_out.txt", output.data(), D_SEQ, D_MODEL);
+
+    if (final_checkpoint_is_total) {
+        dumpFp32ProfileFinal("final_total", "non_GEMM_after_ff2");
+    } else {
+        dumpFp32ProfileFinal("after_final_addnorm",
+                             "non_GEMM_after_ff2",
+                             profile_suffix);
+    }
 }
 
+#if !CFG_FULL_INTERLEAVED_PIPELINE
+void transformerBlockGroupedNonInterleaved(std::size_t learner_count,
+                                           const Matrix& input,
+                                           const std::vector<std::string>& dump_dirs,
+                                           std::vector<Matrix>& outputs) {
+    outputs.assign(learner_count, Matrix(D_SEQ * D_MODEL, 0.0f));
+    for (std::size_t learner = 0; learner < learner_count; learner++) {
+        const std::string profile_suffix =
+            "_learner" + std::to_string(learner);
+        transformerBlock1D(learner,
+                           input,
+                           dump_dirs[learner],
+                           outputs[learner],
+                           profile_suffix,
+                           learner + 1u == learner_count);
+    }
+}
+#endif
+
+#if CFG_FULL_INTERLEAVED_PIPELINE
 void transformerBlockGroupedFullInterleaved(std::size_t learner_count,
                                             const Matrix& input,
                                             const std::vector<std::string>& dump_dirs,
@@ -704,6 +789,8 @@ void transformerBlockGroupedFullInterleaved(std::size_t learner_count,
 
     Matrix multihead_interleaved(D_SEQ * D_MODEL * learner_count, 0.0f);
 
+    // Full-interleaved FP32 keeps learners adjacent in memory so the compact
+    // GEMM kernels can process 2D/4D codebook lanes together.
     for (std::size_t head = 0; head < NUM_HEAD; head++) {
         std::cout << "Head : " << head << std::endl;
 
@@ -748,20 +835,26 @@ void transformerBlockGroupedFullInterleaved(std::size_t learner_count,
 
     dumpInterleavedFloatMatrices(dump_dirs, "multihead_out.txt", multihead_interleaved.data(),
                                  D_SEQ, D_MODEL, learner_count);
+    dumpFp32ProfileCheckpoint("after_mha", "MHA");
 
     std::cout << "Condense" << std::endl;
     Matrix condense;
+    // Projection is still one logical GEMM, but the output layout remains
+    // [seq][feature][learner] for the following AddNorm and FFN stages.
     denseInterleaved("condense", learner_count, multihead_interleaved.data(), D_SEQ, condense);
     dumpInterleavedFloatMatrices(dump_dirs, "condense_out.txt", condense.data(),
                                  D_SEQ, D_MODEL, learner_count);
+    dumpFp32ProfileCheckpoint("after_projection", "Projection");
 
     std::cout << "Add Norm" << std::endl;
     addNormInterleaved(input_interleaved.data(), condense.data(), D_SEQ, D_MODEL, learner_count);
     dumpInterleavedFloatMatrices(dump_dirs, "after_attn_addnorm.txt", condense.data(),
                                  D_SEQ, D_MODEL, learner_count);
+    dumpFp32ProfileCheckpoint("after_attn_addnorm", "non_GEMM_after_projection");
 
     std::cout << "Feed Forward 0" << std::endl;
     Matrix ff0;
+    // FF0 expands all learners in the interleaved layout without unpacking them.
     denseInterleaved("ff0", learner_count, condense.data(), D_SEQ, ff0);
     dumpInterleavedFloatMatrices(dump_dirs, "ff0_out.txt", ff0.data(),
                                  D_SEQ, D_FF, learner_count);
@@ -769,9 +862,11 @@ void transformerBlockGroupedFullInterleaved(std::size_t learner_count,
         printInterleavedFloatPreview("ffn0_learner" + std::to_string(learner),
                                      ff0.data(), D_SEQ * D_FF, learner_count, learner);
     }
+    dumpFp32ProfileCheckpoint("after_ff1", "FF1");
 
     std::cout << "Feed Forward 1" << std::endl;
     Matrix ff1;
+    // FF1 returns the feed-forward path to D_MODEL before the final residual add.
     denseInterleaved("ff1", learner_count, ff0.data(), D_SEQ, ff1);
     dumpInterleavedFloatMatrices(dump_dirs, "ff1_out.txt", ff1.data(),
                                  D_SEQ, D_MODEL, learner_count);
@@ -779,24 +874,17 @@ void transformerBlockGroupedFullInterleaved(std::size_t learner_count,
         printInterleavedFloatPreview("ffn1_pre_addnorm_learner" + std::to_string(learner),
                                      ff1.data(), D_SEQ * D_MODEL, learner_count, learner);
     }
+    dumpFp32ProfileCheckpoint("after_ff2", "FF2");
 
     std::cout << "Add Norm" << std::endl;
     addNormInterleaved(condense.data(), ff1.data(), D_SEQ, D_MODEL, learner_count);
     dumpInterleavedFloatMatrices(dump_dirs, "final_out.txt", ff1.data(),
                                  D_SEQ, D_MODEL, learner_count);
+    dumpFp32ProfileFinal("final_total", "non_GEMM_after_ff2");
 
     deinterleaveOutputs(ff1, D_SEQ, D_MODEL, learner_count, outputs);
 }
-
-void transformerBlockGroupedNonInterleaved(std::size_t learner_count,
-                                           const Matrix& input,
-                                           const std::vector<std::string>& dump_dirs,
-                                           std::vector<Matrix>& outputs) {
-    outputs.assign(learner_count, Matrix(D_SEQ * D_MODEL, 0.0f));
-    for (std::size_t learner = 0; learner < learner_count; learner++) {
-        transformerBlock1D(learner, input, dump_dirs[learner], outputs[learner]);
-    }
-}
+#endif
 
 Matrix loadInputMatrix() {
     static_assert(GEMM_M == D_SEQ, "input_matrix.h GEMM_M must match D_SEQ");
@@ -820,11 +908,20 @@ void run(std::size_t learner_count, const std::string& c_output_root) {
     Matrix input = loadInputMatrix();
     std::vector<std::string> dump_dirs(learner_count);
     for (std::size_t learner = 0; learner < learner_count; learner++) {
-        dump_dirs[learner] = c_output_root + "/learner" + std::to_string(learner);
-        std::filesystem::create_directories(dump_dirs[learner]);
+        dump_dirs[learner] =
+            c_output_root.empty()
+                ? std::string()
+                : c_output_root + "/learner" + std::to_string(learner);
+        if (!dump_dirs[learner].empty()) {
+            std::filesystem::create_directories(dump_dirs[learner]);
+        }
         dumpFloatMatrixIfEnabled(dump_dirs[learner], "input_matrix.txt",
                                  input.data(), D_SEQ, D_MODEL);
     }
+
+    // Start the gem5 stats window after setup so file-system work and input
+    // dumping do not pollute the transformer compute profile.
+    resetTransformerStatsWindow(fp32ProfileScope(learner_count));
 
     std::vector<Matrix> outputs;
     if (learner_count == 2u || learner_count == 4u) {
@@ -840,9 +937,22 @@ void run(std::size_t learner_count, const std::string& c_output_root) {
                 std::cout << "\n=============== LEARNER " << learner
                           << " ===============\n" << std::endl;
             }
-            transformerBlock1D(learner, input, dump_dirs[learner], outputs[learner]);
+            const std::string profile_suffix =
+                (learner_count > 1u) ? "_learner" + std::to_string(learner) : std::string();
+            transformerBlock1D(learner,
+                               input,
+                               dump_dirs[learner],
+                               outputs[learner],
+                               profile_suffix,
+                               learner + 1u == learner_count);
         }
     }
+
+#if !CFG_GEM5_PROFILE_REGIONS
+    // Legacy profiling mode has only one dump, so the whole FP32 run appears as
+    // a single stats block just like the int8 PROFILE_GEMM_ONLY path.
+    dumpTransformerStatsLegacyBoundary("final_total", "complete_fp32_transformer_block");
+#endif
 
     for (std::size_t learner = 0; learner < outputs.size(); learner++) {
         dumpFloatMatrixIfEnabled(dump_dirs[learner], "output.txt",

@@ -1,0 +1,23 @@
+column	source	handling
+sim_seconds	simSeconds	interval rows use current cumulative dump minus previous cumulative dump; final_total uses dump 6 cumulative value
+instructions	simInsts	interval rows use current cumulative dump minus previous cumulative dump; final_total uses dump 6 cumulative value
+ops	simOps	interval rows use current cumulative dump minus previous cumulative dump; final_total uses dump 6 cumulative value
+cpu_cycles	system.cpu_cluster.cpus.numCycles	interval rows use current cumulative dump minus previous cumulative dump; final_total uses dump 6 cumulative value
+memory_references	system.cpu_cluster.cpus.commitStats0.numMemRefs	interval rows use current cumulative dump minus previous cumulative dump; final_total uses dump 6 cumulative value
+load_instructions	system.cpu_cluster.cpus.commitStats0.numLoadInsts	interval rows use current cumulative dump minus previous cumulative dump; final_total uses dump 6 cumulative value
+store_instructions	system.cpu_cluster.cpus.commitStats0.numStoreInsts	interval rows use current cumulative dump minus previous cumulative dump; final_total uses dump 6 cumulative value
+dcache_demand_accesses	system.cpu_cluster.cpus.dcache.demandAccesses::total	interval rows use current cumulative dump minus previous cumulative dump; final_total uses dump 6 cumulative value
+dcache_demand_misses	system.cpu_cluster.cpus.dcache.demandMisses::total	interval rows use current cumulative dump minus previous cumulative dump; final_total uses dump 6 cumulative value
+icache_demand_accesses	system.cpu_cluster.cpus.icache.demandAccesses::total	interval rows use current cumulative dump minus previous cumulative dump; final_total uses dump 6 cumulative value
+icache_demand_misses	system.cpu_cluster.cpus.icache.demandMisses::total	interval rows use current cumulative dump minus previous cumulative dump; final_total uses dump 6 cumulative value
+l2_demand_accesses	system.cpu_cluster.l2.demandAccesses::total	interval rows use current cumulative dump minus previous cumulative dump; final_total uses dump 6 cumulative value
+l2_demand_misses	system.cpu_cluster.l2.demandMisses::total	interval rows use current cumulative dump minus previous cumulative dump; final_total uses dump 6 cumulative value
+committed_branches	system.cpu_cluster.cpus.branchPred.committed_0::total	interval rows use current cumulative dump minus previous cumulative dump; final_total uses dump 6 cumulative value
+branch_mispredictions	system.cpu_cluster.cpus.branchPred.mispredicted_0::total	interval rows use current cumulative dump minus previous cumulative dump; final_total uses dump 6 cumulative value
+ipc	system.cpu_cluster.cpus.ipc	final_total only; interval rows blank
+cpi	system.cpu_cluster.cpus.cpi	final_total only; interval rows blank
+dcache_demand_miss_rate	dcache_demand_misses / dcache_demand_accesses from final_total row	final_total only; interval rows blank
+icache_demand_miss_rate	icache_demand_misses / icache_demand_accesses from final_total row	final_total only; interval rows blank
+l2_demand_miss_rate	l2_demand_misses / l2_demand_accesses from final_total row	final_total only; interval rows blank
+branch_misprediction_rate	branch_mispredictions / committed_branches from final_total row	final_total only; interval rows blank
+btb_hit_ratio	system.cpu_cluster.cpus.branchPred.BTBHitRatio	final_total only; interval rows blank

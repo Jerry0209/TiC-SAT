@@ -103,7 +103,7 @@ echo "  SIMD_FLAG=${SIMD_FLAG:-0}"
   -I. \
   -IFull_NN/inc \
   -IFull_NN/gemm_definitions \
-  -DSA_SIZE=16 \
+  -DSA_SIZE=4 \
   -DDEVELOP \
   -DCORE_NUM=1 \
   -fopenmp \
