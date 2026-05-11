@@ -18,34 +18,6 @@ int8_t unpackPackedValueLocal(const uint32_t* row, std::size_t elem_idx) {
     return static_cast<int8_t>((row[word_idx] >> (byte_idx * 8u)) & 0xFFu);
 }
 
-#if CFG_SIMD
-constexpr std::size_t kMatmulRowTile = 8u;
-constexpr std::size_t kMatmulColTile = 8u;
-constexpr std::size_t kMatmulKTile = 64u;
-
-void unpackInterleavedTileToInt32(const int8_t* src_interleaved,
-                                  std::size_t src_cols,
-                                  std::size_t row_base,
-                                  std::size_t col_base,
-                                  std::size_t row_tile,
-                                  std::size_t col_tile,
-                                  std::size_t learner_count,
-                                  int32_t* dst_interleaved) {
-    for (std::size_t row = 0; row < row_tile; row++) {
-        for (std::size_t col = 0; col < col_tile; col++) {
-            const int8_t* src_slot =
-                src_interleaved + (((row_base + row) * src_cols + col_base + col) * learner_count);
-            int32_t* dst_slot =
-                dst_interleaved + ((row * col_tile + col) * learner_count);
-
-            for (std::size_t learner = 0; learner < learner_count; learner++) {
-                dst_slot[learner] = static_cast<int32_t>(src_slot[learner]);
-            }
-        }
-    }
-}
-#endif
-
 void packOneLearner(const int8_t* input_interleaved,
                     std::size_t rows,
                     std::size_t cols,
@@ -212,75 +184,27 @@ void matmulInterleaved4DToInt8(const int8_t* lhs_interleaved,
                                std::size_t rhs_cols,
                                std::size_t k_elems,
                                int8_t* output_interleaved) {
+    const std::size_t total_out = lhs_rows * rhs_cols * 4u;
+    std::vector<int32_t> output_acc(total_out, 0);
+
 #if CFG_SIMD
-    std::vector<int32_t> lhs_i32(kMatmulRowTile * kMatmulKTile * 4u, 0);
-    std::vector<int32_t> rhs_i32(kMatmulColTile * kMatmulKTile * 4u, 0);
-    std::vector<int32_t> partial_acc(kMatmulRowTile * kMatmulColTile * 4u, 0);
-    std::vector<int32_t> output_acc(kMatmulRowTile * kMatmulColTile * 4u, 0);
+    std::vector<int32_t> lhs_i32(lhs_rows * k_elems * 4u);
+    std::vector<int32_t> rhs_i32(rhs_cols * k_elems * 4u);
 
-    for (std::size_t row0 = 0; row0 < lhs_rows; row0 += kMatmulRowTile) {
-        const std::size_t row_tile =
-            std::min(kMatmulRowTile, lhs_rows - row0);
-
-        for (std::size_t col0 = 0; col0 < rhs_cols; col0 += kMatmulColTile) {
-            const std::size_t col_tile =
-                std::min(kMatmulColTile, rhs_cols - col0);
-            const std::size_t out_tile_count = row_tile * col_tile * 4u;
-
-            std::fill(output_acc.begin(), output_acc.begin() + out_tile_count, 0);
-
-            for (std::size_t k0 = 0; k0 < k_elems; k0 += kMatmulKTile) {
-                const std::size_t k_tile =
-                    std::min(kMatmulKTile, k_elems - k0);
-
-                // Widen only the active row/column/K tile. The output still uses
-                // the full rhs_cols stride below, so tiling does not change layout.
-                unpackInterleavedTileToInt32(
-                    lhs_interleaved,
-                    k_elems,
-                    row0,
-                    k0,
-                    row_tile,
-                    k_tile,
-                    4u,
-                    lhs_i32.data());
-                unpackInterleavedTileToInt32(
-                    rhs_by_col_interleaved,
-                    k_elems,
-                    col0,
-                    k0,
-                    col_tile,
-                    k_tile,
-                    4u,
-                    rhs_i32.data());
-
-                sve_gemm_dense_int8_interleaved_4D(
-                    lhs_i32.data(),
-                    rhs_i32.data(),
-                    static_cast<uint32_t>(row_tile),
-                    static_cast<uint32_t>(col_tile),
-                    static_cast<uint32_t>(k_tile),
-                    partial_acc.data());
-
-                for (std::size_t idx = 0; idx < out_tile_count; idx++) {
-                    output_acc[idx] += partial_acc[idx];
-                }
-            }
-
-            for (std::size_t row = 0; row < row_tile; row++) {
-                for (std::size_t col = 0; col < col_tile; col++) {
-                    const int32_t* acc_slot =
-                        output_acc.data() + ((row * col_tile + col) * 4u);
-                    int8_t* out_slot =
-                        output_interleaved + (((row0 + row) * rhs_cols + col0 + col) * 4u);
-
-                    for (std::size_t learner = 0; learner < 4u; learner++) {
-                        out_slot[learner] = static_cast<int8_t>(acc_slot[learner]);
-                    }
-                }
-            }
-        }
+    for (std::size_t idx = 0; idx < lhs_i32.size(); idx++) {
+        lhs_i32[idx] = static_cast<int32_t>(lhs_interleaved[idx]);
     }
+    for (std::size_t idx = 0; idx < rhs_i32.size(); idx++) {
+        rhs_i32[idx] = static_cast<int32_t>(rhs_by_col_interleaved[idx]);
+    }
+
+    sve_gemm_dense_int8_interleaved_4D(
+        lhs_i32.data(),
+        rhs_i32.data(),
+        static_cast<uint32_t>(lhs_rows),
+        static_cast<uint32_t>(rhs_cols),
+        static_cast<uint32_t>(k_elems),
+        output_acc.data());
 #else
     for (std::size_t row = 0; row < lhs_rows; row++) {
         for (std::size_t col = 0; col < rhs_cols; col++) {
@@ -293,13 +217,17 @@ void matmulInterleaved4DToInt8(const int8_t* lhs_interleaved,
                                     static_cast<int32_t>(rhs_slot[learner]);
                 }
             }
-            int8_t* out_slot = output_interleaved + ((row * rhs_cols + col) * 4u);
+            int32_t* out_slot = output_acc.data() + ((row * rhs_cols + col) * 4u);
             for (std::size_t learner = 0; learner < 4u; learner++) {
-                out_slot[learner] = static_cast<int8_t>(acc[learner]);
+                out_slot[learner] = acc[learner];
             }
         }
     }
 #endif
+
+    for (std::size_t idx = 0; idx < total_out; idx++) {
+        output_interleaved[idx] = static_cast<int8_t>(output_acc[idx]);
+    }
 }
 
 void matmulInterleaved2DToInt8(const int8_t* lhs_interleaved,
@@ -308,75 +236,27 @@ void matmulInterleaved2DToInt8(const int8_t* lhs_interleaved,
                                std::size_t rhs_cols,
                                std::size_t k_elems,
                                int8_t* output_interleaved) {
+    const std::size_t total_out = lhs_rows * rhs_cols * 2u;
+    std::vector<int32_t> output_acc(total_out, 0);
+
 #if CFG_SIMD
-    std::vector<int32_t> lhs_i32(kMatmulRowTile * kMatmulKTile * 2u, 0);
-    std::vector<int32_t> rhs_i32(kMatmulColTile * kMatmulKTile * 2u, 0);
-    std::vector<int32_t> partial_acc(kMatmulRowTile * kMatmulColTile * 2u, 0);
-    std::vector<int32_t> output_acc(kMatmulRowTile * kMatmulColTile * 2u, 0);
+    std::vector<int32_t> lhs_i32(lhs_rows * k_elems * 2u);
+    std::vector<int32_t> rhs_i32(rhs_cols * k_elems * 2u);
 
-    for (std::size_t row0 = 0; row0 < lhs_rows; row0 += kMatmulRowTile) {
-        const std::size_t row_tile =
-            std::min(kMatmulRowTile, lhs_rows - row0);
-
-        for (std::size_t col0 = 0; col0 < rhs_cols; col0 += kMatmulColTile) {
-            const std::size_t col_tile =
-                std::min(kMatmulColTile, rhs_cols - col0);
-            const std::size_t out_tile_count = row_tile * col_tile * 2u;
-
-            std::fill(output_acc.begin(), output_acc.begin() + out_tile_count, 0);
-
-            for (std::size_t k0 = 0; k0 < k_elems; k0 += kMatmulKTile) {
-                const std::size_t k_tile =
-                    std::min(kMatmulKTile, k_elems - k0);
-
-                // Same layout rule as the 4D path: scratch is compact, final
-                // stores use full matrix coordinates.
-                unpackInterleavedTileToInt32(
-                    lhs_interleaved,
-                    k_elems,
-                    row0,
-                    k0,
-                    row_tile,
-                    k_tile,
-                    2u,
-                    lhs_i32.data());
-                unpackInterleavedTileToInt32(
-                    rhs_by_col_interleaved,
-                    k_elems,
-                    col0,
-                    k0,
-                    col_tile,
-                    k_tile,
-                    2u,
-                    rhs_i32.data());
-
-                sve_gemm_dense_int8_interleaved_2D(
-                    lhs_i32.data(),
-                    rhs_i32.data(),
-                    static_cast<uint32_t>(row_tile),
-                    static_cast<uint32_t>(col_tile),
-                    static_cast<uint32_t>(k_tile),
-                    partial_acc.data());
-
-                for (std::size_t idx = 0; idx < out_tile_count; idx++) {
-                    output_acc[idx] += partial_acc[idx];
-                }
-            }
-
-            for (std::size_t row = 0; row < row_tile; row++) {
-                for (std::size_t col = 0; col < col_tile; col++) {
-                    const int32_t* acc_slot =
-                        output_acc.data() + ((row * col_tile + col) * 2u);
-                    int8_t* out_slot =
-                        output_interleaved + (((row0 + row) * rhs_cols + col0 + col) * 2u);
-
-                    for (std::size_t learner = 0; learner < 2u; learner++) {
-                        out_slot[learner] = static_cast<int8_t>(acc_slot[learner]);
-                    }
-                }
-            }
-        }
+    for (std::size_t idx = 0; idx < lhs_i32.size(); idx++) {
+        lhs_i32[idx] = static_cast<int32_t>(lhs_interleaved[idx]);
     }
+    for (std::size_t idx = 0; idx < rhs_i32.size(); idx++) {
+        rhs_i32[idx] = static_cast<int32_t>(rhs_by_col_interleaved[idx]);
+    }
+
+    sve_gemm_dense_int8_interleaved_2D(
+        lhs_i32.data(),
+        rhs_i32.data(),
+        static_cast<uint32_t>(lhs_rows),
+        static_cast<uint32_t>(rhs_cols),
+        static_cast<uint32_t>(k_elems),
+        output_acc.data());
 #else
     for (std::size_t row = 0; row < lhs_rows; row++) {
         for (std::size_t col = 0; col < rhs_cols; col++) {
@@ -389,13 +269,17 @@ void matmulInterleaved2DToInt8(const int8_t* lhs_interleaved,
                                     static_cast<int32_t>(rhs_slot[learner]);
                 }
             }
-            int8_t* out_slot = output_interleaved + ((row * rhs_cols + col) * 2u);
+            int32_t* out_slot = output_acc.data() + ((row * rhs_cols + col) * 2u);
             for (std::size_t learner = 0; learner < 2u; learner++) {
-                out_slot[learner] = static_cast<int8_t>(acc[learner]);
+                out_slot[learner] = acc[learner];
             }
         }
     }
 #endif
+
+    for (std::size_t idx = 0; idx < total_out; idx++) {
+        output_interleaved[idx] = static_cast<int8_t>(output_acc[idx]);
+    }
 }
 
 void copyHeadToMultiheadInterleaved4D(const int8_t* head_interleaved,

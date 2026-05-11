@@ -1,0 +1,5 @@
+scope	single_transformer_block
+dump_index	checkpoint	interval_since_previous
+1	after_mha	MHA
+2	after_projection	Projection
+3	after_attn_addnorm	non_GEMM_after_projection

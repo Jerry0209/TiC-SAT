@@ -138,14 +138,6 @@ void gemm_exec_compact_int_sve_interleaved_4D_diff_seq(gemm_t gemm_layer,
                                                        int32_t *out_interleaved,
                                                        uint8_t bits_per_cb);
 
-void gemm_exec_compact_int_sve_interleaved_4D_diff_seq_to_int8(gemm_t gemm_layer,
-                                                               const int8_t *in_interleaved,
-                                                               const uint32_t *weight_idx_interleaved,
-                                                               const int8_t *codebook_interleaved,
-                                                               const int32_t *bias_interleaved,
-                                                               int8_t *out_interleaved,
-                                                               uint8_t bits_per_cb);
-
 void gemm_exec_compact_int_sve_interleaved_2D_same_seq(gemm_t gemm_layer,
                                                        const int8_t *in_interleaved,
                                                        const uint32_t *weight_idx,
@@ -154,14 +146,6 @@ void gemm_exec_compact_int_sve_interleaved_2D_same_seq(gemm_t gemm_layer,
                                                        int32_t *out_interleaved,
                                                        uint8_t bits_per_cb);
 
-void gemm_exec_compact_int_sve_interleaved_2D_same_seq_to_int8(gemm_t gemm_layer,
-                                                              const int8_t *in_interleaved,
-                                                              const uint32_t *weight_idx,
-                                                              const int8_t *codebook_interleaved,
-                                                              const int32_t *bias_interleaved,
-                                                              int8_t *out_interleaved,
-                                                              uint8_t bits_per_cb);
-
 void gemm_exec_compact_int_sve_interleaved_4D_same_seq(gemm_t gemm_layer,
                                                        const int8_t *in_interleaved,
                                                        const uint32_t *weight_idx,
@@ -169,14 +153,6 @@ void gemm_exec_compact_int_sve_interleaved_4D_same_seq(gemm_t gemm_layer,
                                                        const int32_t *bias_interleaved,
                                                        int32_t *out_interleaved,
                                                        uint8_t bits_per_cb);
-
-void gemm_exec_compact_int_sve_interleaved_4D_same_seq_to_int8(gemm_t gemm_layer,
-                                                               const int8_t *in_interleaved,
-                                                               const uint32_t *weight_idx,
-                                                               const int8_t *codebook_interleaved,
-                                                               const int32_t *bias_interleaved,
-                                                               int8_t *out_interleaved,
-                                                               uint8_t bits_per_cb);
 #endif
 
 #endif
