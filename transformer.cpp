@@ -17,6 +17,7 @@
 #include <filesystem>
 
 #include "transformer_layers/debuggerFunctions.h"
+#include "transformer_layers/profile.h"
 #if CFG_USE_FP32_TRANSFORMER
 #include "transformer_layers/transformerFloat.h"
 #endif
@@ -105,7 +106,9 @@ void loadWeight(int n_head, int qkv, int size, uint32_t *array, const std::strin
 }
 
 std::size_t getTransformerLearnerCount() {
-#if CFG_USE_CODEBOOK_GEMM
+#if CFG_DENSE_NO_SIMD_BASELINE
+    return N_LEARNERS;
+#elif CFG_USE_CODEBOOK_GEMM
     try {
         return getCodebookDenseLearnerCount("q_h0");
     } catch (const std::exception&) {
@@ -120,6 +123,12 @@ std::string getNotebookWeightsDirForLearner(const std::string& notebook_weights_
                                             std::size_t learner_idx) {
     return notebook_weights_dir + "/learner" + std::to_string(learner_idx);
 }
+
+#if CFG_DENSE_NO_SIMD_BASELINE
+using ActiveTransformerBlock = DenseNoSimdTransformerBlock;
+#else
+using ActiveTransformerBlock = TransformerBlock;
+#endif
 
 
 void test() {
@@ -165,6 +174,7 @@ void test() {
     std::cout << "CFG_FULL_INTERLEAVED_PIPELINE = " << CFG_FULL_INTERLEAVED_PIPELINE << std::endl;
     std::cout << "CFG_USE_FP32_TRANSFORMER = " << CFG_USE_FP32_TRANSFORMER << std::endl;
     std::cout << "CFG_SIMD = " << CFG_SIMD << std::endl;
+    std::cout << "CFG_DENSE_NO_SIMD_BASELINE = " << CFG_DENSE_NO_SIMD_BASELINE << std::endl;
     
     
 // #ifdef USE_F32
@@ -186,7 +196,11 @@ void test() {
     const std::size_t learner_count = getTransformerLearnerCount();
     constexpr bool dump_outputs_enabled =
         !(CFG_PROFILE_GEMM_ONLY || CFG_GEM5_PROFILE_REGIONS);
+#if CFG_DENSE_NO_SIMD_BASELINE
+    std::cout << "DENSE_NO_SIMD_BASELINE_N_LEARNERS = " << learner_count << std::endl;
+#else
     std::cout << "CODEBOOK_REGISTRY_N_LEARNERS = " << learner_count << std::endl;
+#endif
 
 #if CFG_USE_FP32_TRANSFORMER
     TransformerFloat::run(
@@ -247,7 +261,7 @@ void test() {
     auto buildTransformerBlockForLearner =
         [&](std::size_t learner_idx,
             const std::string& learner_notebook_weights_dir,
-            const std::string& learner_dump_dir) -> TransformerBlock* {
+            const std::string& learner_dump_dir) -> ActiveTransformerBlock* {
         std::vector<uint32_t*> weightVec(3 * NUM_HEAD + 3, nullptr);
 #if !CFG_CODEBOOK_ONLY_MODE
         const int head_qkv_size = D_Q * D_MODEL >> 2;
@@ -439,7 +453,7 @@ void test() {
         weightVec[NUM_HEAD * 3 + 1] = ff0_kernel;
         weightVec[NUM_HEAD * 3 + 2] = ff1_kernel;
 
-        return new TransformerBlock(
+        return new ActiveTransformerBlock(
             D_SEQ,
             D_MODEL,
             D_Q,
@@ -452,6 +466,7 @@ void test() {
             learner_dump_dir);
     };
 
+#if !CFG_DENSE_NO_SIMD_BASELINE
     // The grouped execution path is enabled when the registry exposes a learner
     // count that has an interleaved GEMM backend. With 2 learners, CodebookDense
     // only groups same-sequence layers; with 4 learners, it chooses same-seq or
@@ -535,6 +550,53 @@ void test() {
 
         return;
     }
+#endif
+
+#if CFG_DENSE_NO_SIMD_BASELINE
+    if (learner_count > 1) {
+        std::vector<TransformerBlock*> learner_blocks(learner_count, nullptr);
+        std::vector<uint32_t*> learner_outputs(learner_count, nullptr);
+
+        for (std::size_t learner_idx = 0; learner_idx < learner_count; learner_idx++) {
+            std::cout << "\n=============== LEARNER " << learner_idx
+                      << " ===============\n" << std::endl;
+
+            const std::string learner_notebook_weights_dir =
+                getNotebookWeightsDirForLearner(notebook_weights_dir, learner_idx);
+            const std::string learner_dump_dir = dump_outputs_enabled
+                ? (multiple_learner_output_root + "/learner" + std::to_string(learner_idx))
+                : std::string();
+
+            if (!learner_dump_dir.empty()) {
+                std::filesystem::create_directories(learner_dump_dir);
+            }
+
+            learner_outputs[learner_idx] = new uint32_t[D_SEQ * D_MODEL >> 2]();
+            learner_blocks[learner_idx] = buildTransformerBlockForLearner(
+                learner_idx,
+                learner_notebook_weights_dir,
+                learner_dump_dir);
+        }
+
+        // Keep one gem5 stats window around the whole sequential learner loop,
+        // after all .bin weights have been loaded into the learner blocks.
+        resetTransformerStatsWindow("dense_no_simd_baseline_multi_learner_for_loop");
+
+        for (std::size_t learner_idx = 0; learner_idx < learner_count; learner_idx++) {
+            learner_blocks[learner_idx]->computeWithoutStatsReset(
+                D_SEQ,
+                tensor_in,
+                learner_outputs[learner_idx]);
+        }
+
+        for (std::size_t learner_idx = 0; learner_idx < learner_count; learner_idx++) {
+            delete learner_blocks[learner_idx];
+            delete[] learner_outputs[learner_idx];
+        }
+
+        return;
+    }
+#endif
 
     for (std::size_t learner_idx = 0; learner_idx < learner_count; learner_idx++) {
         if (learner_count > 1) {

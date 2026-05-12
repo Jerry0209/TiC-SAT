@@ -97,6 +97,14 @@
 #define CFG_SIMD 0
 #endif
 
+// Run the default Dense transformer as a no-SIMD, sequential multi-learner
+// baseline. The learner count comes directly from N_LEARNERS in codebooks_def.h.
+#ifdef DENSE_NO_SIMD_BASELINE
+#define CFG_DENSE_NO_SIMD_BASELINE 1
+#else
+#define CFG_DENSE_NO_SIMD_BASELINE 0
+#endif
+
 // Keep the whole 4-learner transformer block in [seq][feature][learner]
 // layout between grouped CodebookDense, attention, softmax, AddNorm, and FFN.
 #ifdef FULL_INTERLEAVED_PIPELINE
@@ -146,6 +154,18 @@
 // Reference comparison only makes sense when codebook GEMM is enabled.
 #if CFG_USE_CODEBOOK_REFERENCE && !CFG_USE_CODEBOOK_GEMM
 #error "ENABLE_CODEBOOK_REFERENCE requires USE_CODEBOOK_GEMM."
+#endif
+
+#if CFG_DENSE_NO_SIMD_BASELINE && CFG_SIMD
+#error "DENSE_NO_SIMD_BASELINE requires SIMD_FLAG=0."
+#endif
+
+#if CFG_DENSE_NO_SIMD_BASELINE && CFG_USE_CODEBOOK_GEMM
+#error "DENSE_NO_SIMD_BASELINE requires USE_CODEBOOK_GEMM_FLAG=0."
+#endif
+
+#if CFG_DENSE_NO_SIMD_BASELINE && CFG_FULL_INTERLEAVED_PIPELINE
+#error "DENSE_NO_SIMD_BASELINE cannot be combined with FULL_INTERLEAVED_PIPELINE."
 #endif
 
 #if CFG_FULL_INTERLEAVED_PIPELINE && !CFG_USE_CODEBOOK_GEMM

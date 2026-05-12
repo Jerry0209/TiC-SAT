@@ -137,10 +137,30 @@ TransformerBlock::~TransformerBlock() {
 }
 
 void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* output) {
+    computeWithStatsLabel(seq_len, input, output, "single_transformer_block");
+}
+
+void DenseNoSimdTransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* output) {
+    computeWithStatsLabel(seq_len, input, output, "dense_no_simd_baseline_transformer_block");
+}
+
+void TransformerBlock::computeWithoutStatsReset(std::size_t seq_len,
+                                                uint32_t* input,
+                                                uint32_t* output) {
+    computeBody(seq_len, input, output);
+}
+
+void TransformerBlock::computeWithStatsLabel(std::size_t seq_len,
+                                             uint32_t* input,
+                                             uint32_t* output,
+                                             const char* stats_window_label) {
     // Start the measured window at the transformer block itself, excluding
     // earlier setup work from the gem5 stats.
-    resetTransformerStatsWindow("single_transformer_block");
+    resetTransformerStatsWindow(stats_window_label);
+    computeBody(seq_len, input, output);
+}
 
+void TransformerBlock::computeBody(std::size_t seq_len, uint32_t* input, uint32_t* output) {
     // Compute each attention head independently and place it in the slice that
     // later forms the concatenated multi-head activation.
     for (std::size_t n = 0; n < num_heads_; ++n) {

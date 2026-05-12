@@ -29,7 +29,8 @@ public:
 
     virtual ~TransformerBlock();
 
-    void compute(std::size_t seq_len, uint32_t* input, uint32_t* output);
+    virtual void compute(std::size_t seq_len, uint32_t* input, uint32_t* output);
+    void computeWithoutStatsReset(std::size_t seq_len, uint32_t* input, uint32_t* output);
     static void computeGroup2(std::size_t seq_len,
                               TransformerBlock* blocks[2],
                               uint32_t* const inputs[2],
@@ -57,6 +58,14 @@ private:
                                              uint32_t* const outputs[4]);
 #endif
 
+protected:
+    void computeWithStatsLabel(std::size_t seq_len,
+                               uint32_t* input,
+                               uint32_t* output,
+                               const char* stats_window_label);
+    void computeBody(std::size_t seq_len, uint32_t* input, uint32_t* output);
+
+private:
     std::size_t num_heads_;
     std::size_t head_hidden_size_;
     std::size_t input_dim_;
@@ -99,4 +108,11 @@ private:
     uint32_t* referenceFF1 = nullptr;
     uint32_t* referenceFinalOutput = nullptr;
 #endif
+};
+
+class DenseNoSimdTransformerBlock : public TransformerBlock {
+public:
+    using TransformerBlock::TransformerBlock;
+
+    void compute(std::size_t seq_len, uint32_t* input, uint32_t* output) override;
 };
