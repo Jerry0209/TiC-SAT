@@ -1,2 +1,26 @@
-scope	group4_full_interleaved_transformer_block
+scope	dense_no_simd_baseline_multi_learner_for_loop
 dump_index	checkpoint	interval_since_previous
+1	after_mha	MHA
+2	after_projection	Projection
+3	after_attn_addnorm	non_GEMM_after_projection
+4	after_ff1	FF1
+5	after_ff2	FF2
+6	final_total	non_GEMM_after_ff2
+7	after_mha	MHA
+8	after_projection	Projection
+9	after_attn_addnorm	non_GEMM_after_projection
+10	after_ff1	FF1
+11	after_ff2	FF2
+12	final_total	non_GEMM_after_ff2
+13	after_mha	MHA
+14	after_projection	Projection
+15	after_attn_addnorm	non_GEMM_after_projection
+16	after_ff1	FF1
+17	after_ff2	FF2
+18	final_total	non_GEMM_after_ff2
+19	after_mha	MHA
+20	after_projection	Projection
+21	after_attn_addnorm	non_GEMM_after_projection
+22	after_ff1	FF1
+23	after_ff2	FF2
+24	final_total	non_GEMM_after_ff2

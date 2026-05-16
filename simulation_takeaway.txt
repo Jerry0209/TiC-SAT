@@ -16,7 +16,7 @@ m5 exit
 
 
 ## DENSE 
-# Old weights, notebook generated, default dense, SIMD enabled
+# Old weights, notebook generated, default dense, SIMD disabled
 SIMD_FLAG=0 RELOAD_WEIGHT_FLAG=1 USE_NOTEBOOK_GENERATED_WEIGHTS_FLAG=1 USE_CODEBOOK_GEMM_FLAG=0 ENABLE_CODEBOOK_REFERENCE_FLAG=0 ENABLE_DEBUG_PRINT_FLAG=1 PROFILE_GEMM_ONLY_FLAG=0 source compile_transformer.sh
 
 # Old weights, notebook generated, default dense, SIMD enabled
@@ -61,6 +61,9 @@ FULL_INTERLEAVED_PIPELINE_FLAG=1 SIMD_FLAG=1 RELOAD_WEIGHT_FLAG=1 USE_NOTEBOOK_G
 /home/thu/opt/qemu-sve/bin/qemu-aarch64 -cpu max,sve=on,sve-default-vector-length=16 -L "$SYSROOT" ./transformer.o < ./transformer.o
 
 /home/thu/opt/qemu-sve/bin/qemu-aarch64 -cpu max,sve=on,sve-default-vector-length=16 -L "$SYSROOT" ./transformer_BERT_mini_int8_noTiling_1D_dense_SVE_128.o < ./transformer_BERT_mini_int8_noTiling_1D_dense_SVE_128.o
+
+/home/thu/opt/qemu-sve/bin/qemu-aarch64 -cpu max,sve=on,sve-default-vector-length=16 -L "$SYSROOT" ./transformer_BERT_base_int8_noTiling_1D_dense_baseline_SVE_128_debug.o < ./transformer_BERT_base_int8_noTiling_1D_dense_baseline_SVE_128_debug.o
+/home/thu/opt/qemu-sve/bin/qemu-aarch64 -cpu max,sve=on,sve-default-vector-length=16 -L "$SYSROOT" ./transformer_BERT_base_int8_noTiling_2D_dense_baseline_SVE_128_debug.o < ./transformer_BERT_base_int8_noTiling_2D_dense_baseline_SVE_128_debug.o
 
 
 # # 128-bit
