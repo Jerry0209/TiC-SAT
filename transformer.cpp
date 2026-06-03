@@ -258,10 +258,17 @@ void test() {
         std::filesystem::create_directories(multiple_learner_output_root);
     }
 
-    auto buildTransformerBlockForLearner =
+    auto buildTransformerBlockForLearner = // a lambda function to build a transformer block for a given learner index and its corresponding notebook weights directory and dump directory
         [&](std::size_t learner_idx,
             const std::string& learner_notebook_weights_dir,
             const std::string& learner_dump_dir) -> ActiveTransformerBlock* {
+
+            // Q weight
+            // K weight
+            // V weight
+            // output projection
+            // FFN layer 1
+            // FFN layer 2
         std::vector<uint32_t*> weightVec(3 * NUM_HEAD + 3, nullptr);
 #if !CFG_CODEBOOK_ONLY_MODE
         const int head_qkv_size = D_Q * D_MODEL >> 2;
@@ -351,7 +358,8 @@ void test() {
 
             weightVec[n * 3] = query_kernel;
             weightVec[n * 3 + 1] = key_kernel;
-            weightVec[n * 3 + 2] = value_kernel;
+            weightVec[n * 3 + 2] = value_kernel; 
+            // End for loading/generating Q/K/V weights for each head
         }
 
         uint32_t* condense_kernel = nullptr;
@@ -464,13 +472,15 @@ void test() {
             MAX_COL,
             learner_idx,
             learner_dump_dir);
-    };
+        // End of lambda function to build a transformer block for a given learner index and its corresponding notebook weights directory and dump directory
+    }; 
 
 #if !CFG_DENSE_NO_SIMD_BASELINE
     // The grouped execution path is enabled when the registry exposes a learner
     // count that has an interleaved GEMM backend. With 2 learners, CodebookDense
     // only groups same-sequence layers; with 4 learners, it chooses same-seq or
     // diff-seq internally from the registry metadata.
+    // 2 Learners
     if (learner_count == 2) {
         TransformerBlock* grouped_blocks[2] = {nullptr, nullptr};
         uint32_t* grouped_inputs[2] = {tensor_in, tensor_in};
@@ -508,6 +518,7 @@ void test() {
         return;
     }
 
+    //  4 Leaners
     if (learner_count == 4) {
         TransformerBlock* grouped_blocks[4] = {nullptr, nullptr, nullptr, nullptr};
         uint32_t* grouped_inputs[4] = {tensor_in, tensor_in, tensor_in, tensor_in};
@@ -553,6 +564,8 @@ void test() {
 #endif
 
 #if CFG_DENSE_NO_SIMD_BASELINE
+    // For the DenseNoSimd baseline, we always execute learners sequentially in a loop, even if the registry exposes multiple learners. 
+    // This is because the baseline does not have an interleaved GEMM backend and thus cannot benefit from grouped execution.
     if (learner_count > 1) {
         std::vector<TransformerBlock*> learner_blocks(learner_count, nullptr);
         std::vector<uint32_t*> learner_outputs(learner_count, nullptr);
@@ -598,6 +611,7 @@ void test() {
     }
 #endif
 
+    // Default single-learner execution path (also used for multi-learner when the registry does not expose a learner count).
     for (std::size_t learner_idx = 0; learner_idx < learner_count; learner_idx++) {
         if (learner_count > 1) {
             std::cout << "\n=============== LEARNER " << learner_idx

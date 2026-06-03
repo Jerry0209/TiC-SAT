@@ -20,8 +20,8 @@ inline CodebookDenseConfig makeCodebookDenseConfigFromRegistry(const char* layer
     cfg.n_learners = view->n_learners;
     cfg.same_seq = view->same_seq;
     cfg.selected_learner = learner;
-    cfg.weight_idx = getGeneratedCodebookWeightIdx(view, learner);
-    cfg.weight_idx_by_learner = view->weight_idx_by_learner;
+    cfg.weight_idx = getGeneratedCodebookWeightIdx(view, learner); // Used for SAME_SEQ
+    cfg.weight_idx_by_learner = view->weight_idx_by_learner; // Used for DIFF_SEQ
     cfg.weight_idx_interleaved = getGeneratedCodebookWeightIdxInterleaved(view);
     cfg.codebook_int8 = getGeneratedCodebookInt8(view, learner);
     cfg.codebooks_int8 = view->codebooks_int8;

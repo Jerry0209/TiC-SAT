@@ -651,6 +651,7 @@ void SingleHeadSelfAttn::computeInterleaved2D(std::size_t seq_len,
     std::vector<int8_t> key_out(seq_len * head_hidden_size * 2u, 0);
     std::vector<int8_t> value_out(seq_len * head_hidden_size * 2u, 0);
 
+    // compute Q/K/V projections with interleaved CodebookDense if available, otherwise fall back to normal compute calls
     computeCodebookDenseInterleaved2D("q_h", query_layers, seq_len, input_interleaved, query_out.data());
     computeCodebookDenseInterleaved2D("k_h", key_layers, seq_len, input_interleaved, key_out.data());
     computeCodebookDenseInterleaved2D("v_h", value_layers, seq_len, input_interleaved, value_out.data());
@@ -743,7 +744,7 @@ void SingleHeadSelfAttn::computeInterleaved2D(std::size_t seq_len,
         seq_len,
         seq_len);
 
-    heads[0]->softmax_->computeInterleaved2D(attention_scores.data(), seq_len);
+    heads[0]->softmax_->computeInterleaved2D(attention_scores.data(), seq_len); // softmax_approx((QK^T) / 8)
 
     dumpInterleavedLearnerMatrices2(
         dump_dirs,
@@ -788,6 +789,7 @@ void SingleHeadSelfAttn::computeInterleaved2D(std::size_t seq_len,
         seq_len,
         head_hidden_size);
 
+    // Post-softmax scaling is fused into the final output matmul for better int8 accuracy, so we apply it to the output of the matmul here before dumping final head output.
     heads[0]->softmax_->post_softmax_interleaved2D(
         output_interleaved,
         seq_len,

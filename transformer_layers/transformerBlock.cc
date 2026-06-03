@@ -692,7 +692,9 @@ void TransformerBlock::computeGroup2FullInterleaved(std::size_t seq_len,
 
     std::vector<int8_t> input_interleaved(seq_len * input_dim * 2u, 0);
     // Convert the packed per-learner inputs into lane-adjacent int8 values.
-    interleavePackedLearners2(seq_len, input_dim, inputs, input_interleaved.data());
+    interleavePackedLearners2(seq_len, input_dim, inputs, input_interleaved.data()); // Convert input matrix to interleaved format
+
+     // Optional: dump the interleaved input for debugging.
 
     std::vector<int8_t> multihead_interleaved(
         seq_len * num_heads * head_hidden_size * 2u, 0);

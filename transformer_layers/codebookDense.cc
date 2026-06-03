@@ -322,7 +322,7 @@ void CodebookDense::runCompactGemm(std::size_t seq_len, const uint32_t *input, u
     packInt8(output_int8, output); // Pack to 32-bit words and output
 }
 
-void CodebookDense::buildInterleavedCachesIfNeeded() {
+void CodebookDense::buildInterleavedCachesIfNeeded() { // Used for DIFF_SEQ 2D/4D paths where each learner has a separate weight_idx stream, but we want to interleave them for better memory access.
     if (n_learners_ != 2u && n_learners_ != 4u) {
         return;
     }

@@ -46,7 +46,7 @@ LinearLayerBundle LayerFactory::create(
 #if CFG_USE_CODEBOOK_GEMM
     try {
         CodebookDenseConfig cfg = makeCheckedCodebookConfig(
-            layer_name.c_str(), input_size, output_size, learner);
+            layer_name.c_str(), input_size, output_size, learner); // Get config from registry and validate shape
 
         bundle.main = new CodebookDense(cfg);
 #if CFG_ENABLE_DEBUG_PRINT
