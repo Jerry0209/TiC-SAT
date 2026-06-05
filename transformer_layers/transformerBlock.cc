@@ -15,6 +15,39 @@
 #include "interleavedPipeline.h"
 #include "transformerBlockInterleavedHelpers.h"
 
+// Function signatures in this file:
+// TransformerBlock::TransformerBlock(std::size_t pre_seq_len, std::size_t input_dim, std::size_t head_hidden_size, std::size_t num_heads, std::size_t ff_size, uint32_t** weightVector, std::size_t kernelDim, std::size_t maxCol, std::size_t learner_idx, std::string dump_dir);
+// TransformerBlock::~TransformerBlock();
+// void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* output);
+// void DenseNoSimdTransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* output);
+// void TransformerBlock::computeWithoutStatsReset(std::size_t seq_len, uint32_t* input, uint32_t* output);
+// void TransformerBlock::computeWithStatsLabel(std::size_t seq_len, uint32_t* input, uint32_t* output, const char* stats_window_label);
+// void TransformerBlock::computeBody(std::size_t seq_len, uint32_t* input, uint32_t* output);
+// template <std::size_t LearnerCount> void TransformerBlock::computeGroupImpl(std::size_t seq_len, TransformerBlock** blocks, uint32_t* const* inputs, uint32_t* const* outputs);
+// void TransformerBlock::computeGroup2FullInterleaved(std::size_t seq_len, TransformerBlock* blocks[2], uint32_t* const inputs[2], uint32_t* const outputs[2]);
+// void TransformerBlock::computeGroup4FullInterleaved(std::size_t seq_len, TransformerBlock* blocks[4], uint32_t* const inputs[4], uint32_t* const outputs[4]);
+// void TransformerBlock::computeGroup2(std::size_t seq_len, TransformerBlock* blocks[2], uint32_t* const inputs[2], uint32_t* const outputs[2]);
+// void TransformerBlock::computeGroup4(std::size_t seq_len, TransformerBlock* blocks[4], uint32_t* const inputs[4], uint32_t* const outputs[4]);
+
+
+/**
+ * @brief Construct a transformer block and allocate its per-layer buffers.
+ *
+ * Builds one self-attention head per entry in `num_heads`, creates the output
+ * projection and feed-forward layers, and allocates the packed intermediate
+ * tensors used during block execution.
+ *
+ * @param pre_seq_len Maximum sequence length used to size internal buffers.
+ * @param input_dim Transformer model dimension, also used as the block input and output width.
+ * @param head_hidden_size Hidden width produced by each self-attention head.
+ * @param num_heads Number of self-attention heads in the multi-head attention stage.
+ * @param ff_size Hidden width of the feed-forward expansion layer.
+ * @param weightVector Layer weight pointers ordered as per-head Q/K/V weights, then condense, FF0, and FF1.
+ * @param kernelDim Hardware/kernel tile dimension passed to attention and AddNorm helpers.
+ * @param maxCol Maximum column count passed to attention and AddNorm helpers.
+ * @param learner_idx Learner identifier used to select learner-specific codebook/dense layers and labels.
+ * @param dump_dir Optional directory where intermediate packed tensors are dumped when dumping is enabled.
+ */
 TransformerBlock::TransformerBlock(std::size_t pre_seq_len,
                                    std::size_t input_dim,
                                    std::size_t head_hidden_size,
@@ -102,7 +135,12 @@ TransformerBlock::TransformerBlock(std::size_t pre_seq_len,
     referenceFinalOutput = new uint32_t[(pre_seq_len * input_dim) >> 2]();
 #endif
 }
-
+/**
+ * @brief Destroy the transformer block and release owned layers and buffers.
+ *
+ * Frees self-attention heads, projection/FFN layers, AddNorm, intermediate
+ * tensors, and optional reference-validation buffers.
+ */
 TransformerBlock::~TransformerBlock() {
     for (auto* h : selfatten_) {
         delete h;
@@ -136,20 +174,61 @@ TransformerBlock::~TransformerBlock() {
 #endif
 }
 
+/**
+ * @brief Execute one transformer block with its normal stats window.
+ *
+ * This is the public single-learner path. It resets transformer stats using the
+ * `single_transformer_block` label and then runs the regular block body.
+ *
+ * @param seq_len Number of sequence positions to process.
+ * @param input Packed int8 input activation buffer, stored as four values per uint32_t.
+ * @param output Packed int8 output activation buffer written by the block.
+ */
 void TransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* output) {
     computeWithStatsLabel(seq_len, input, output, "single_transformer_block");
 }
 
+/**
+ * @brief Execute the Dense no-SIMD baseline transformer block.
+ *
+ * Uses the same single-learner block body as `TransformerBlock::compute`, but
+ * records the stats window under the dense baseline label.
+ *
+ * @param seq_len Number of sequence positions to process.
+ * @param input Packed int8 input activation buffer, stored as four values per uint32_t.
+ * @param output Packed int8 output activation buffer written by the block.
+ */
 void DenseNoSimdTransformerBlock::compute(std::size_t seq_len, uint32_t* input, uint32_t* output) {
     computeWithStatsLabel(seq_len, input, output, "dense_no_simd_baseline_transformer_block");
 }
 
+/**
+ * @brief Execute one transformer block without resetting gem5 stats.
+ *
+ * Used when an outer caller already opened a stats window, for example when
+ * multiple learners are executed sequentially as one measured region.
+ *
+ * @param seq_len Number of sequence positions to process.
+ * @param input Packed int8 input activation buffer, stored as four values per uint32_t.
+ * @param output Packed int8 output activation buffer written by the block.
+ */
 void TransformerBlock::computeWithoutStatsReset(std::size_t seq_len,
                                                 uint32_t* input,
                                                 uint32_t* output) {
     computeBody(seq_len, input, output);
 }
 
+/**
+ * @brief Execute one transformer block after opening a named stats window.
+ *
+ * Resets transformer profiling counters with `stats_window_label`, then runs
+ * the common non-grouped block implementation.
+ *
+ * @param seq_len Number of sequence positions to process.
+ * @param input Packed int8 input activation buffer, stored as four values per uint32_t.
+ * @param output Packed int8 output activation buffer written by the block.
+ * @param stats_window_label Label used for the gem5 transformer stats window.
+ */
 void TransformerBlock::computeWithStatsLabel(std::size_t seq_len,
                                              uint32_t* input,
                                              uint32_t* output,
@@ -160,6 +239,18 @@ void TransformerBlock::computeWithStatsLabel(std::size_t seq_len,
     computeBody(seq_len, input, output);
 }
 
+
+/**
+ * @brief Run the standard single-learner transformer block pipeline. (Legacy from TiC-SAT with some adjustments)
+ *
+ * Executes attention heads, optional multi-head transpose, output projection,
+ * first AddNorm, FF0, FF1, and final AddNorm. This path keeps tensors in the
+ * normal packed per-learner layout rather than the full interleaved layout.
+ *
+ * @param seq_len Number of sequence positions to process.
+ * @param input Packed int8 input activation buffer, stored as four values per uint32_t.
+ * @param output Packed int8 output activation buffer written by the block.
+ */
 void TransformerBlock::computeBody(std::size_t seq_len, uint32_t* input, uint32_t* output) {
     // Compute each attention head independently and place it in the slice that
     // later forms the concatenated multi-head activation.
@@ -367,6 +458,20 @@ void TransformerBlock::computeBody(std::size_t seq_len, uint32_t* input, uint32_
     dumpTransformerStatsLegacyBoundary("final_total", "non_GEMM_after_ff2");
 }
 
+/**
+ * @brief Execute a grouped transformer block for two or four learners.
+ *
+ * This templated dispatcher is shared by `computeGroup2` and `computeGroup4`.
+ * When `CFG_FULL_INTERLEAVED_PIPELINE` is enabled it immediately forwards to
+ * the full interleaved implementation. Otherwise it runs a grouped staged path
+ * that keeps each learner's packed buffers separate.
+ *
+ * @tparam LearnerCount Number of learners in the group. Supported values are 2 and 4.
+ * @param seq_len Number of sequence positions to process for every learner.
+ * @param blocks Array of learner-specific transformer block objects.
+ * @param inputs Array of packed int8 input buffers, one per learner.
+ * @param outputs Array of packed int8 output buffers, one per learner.
+ */
 template <std::size_t LearnerCount>
 void TransformerBlock::computeGroupImpl(std::size_t seq_len,
                                         TransformerBlock** blocks,
@@ -666,6 +771,18 @@ void TransformerBlock::computeGroupImpl(std::size_t seq_len,
 }
 
 #if CFG_FULL_INTERLEAVED_PIPELINE
+/**
+ * @brief Execute the full interleaved transformer pipeline for two learners.
+ *
+ * Converts the two packed learner inputs into a shared `[seq][feature][learner]`
+ * int8 layout, keeps that layout through attention, AddNorm, condense, and FFN
+ * stages, then packs the final result back into the caller-provided output buffers.
+ *
+ * @param seq_len Number of sequence positions to process for both learners.
+ * @param blocks Two learner-specific transformer block objects whose layers are used.
+ * @param inputs Two packed int8 input buffers, one per learner.
+ * @param outputs Two packed int8 output buffers that receive the final block outputs.
+ */
 void TransformerBlock::computeGroup2FullInterleaved(std::size_t seq_len,
                                                     TransformerBlock* blocks[2],
                                                     uint32_t* const inputs[2],
@@ -948,6 +1065,18 @@ void TransformerBlock::computeGroup2FullInterleaved(std::size_t seq_len,
     dumpTransformerStatsLegacyBoundary("final_total", "non_GEMM_after_ff2");
 }
 
+/**
+ * @brief Execute the full interleaved transformer pipeline for four learners.
+ *
+ * Converts the four packed learner inputs into a shared `[seq][feature][learner]`
+ * int8 layout, keeps that layout through attention, AddNorm, condense, and FFN
+ * stages, then packs the final result back into the caller-provided output buffers.
+ *
+ * @param seq_len Number of sequence positions to process for all four learners.
+ * @param blocks Four learner-specific transformer block objects whose layers are used.
+ * @param inputs Four packed int8 input buffers, one per learner.
+ * @param outputs Four packed int8 output buffers that receive the final block outputs.
+ */
 void TransformerBlock::computeGroup4FullInterleaved(std::size_t seq_len,
                                                     TransformerBlock* blocks[4],
                                                     uint32_t* const inputs[4],
@@ -1228,6 +1357,17 @@ void TransformerBlock::computeGroup4FullInterleaved(std::size_t seq_len,
 }
 #endif
 
+/**
+ * @brief Public grouped transformer entry point for two learners.
+ *
+ * Forwards to `computeGroupImpl<2u>`, which selects either the full interleaved
+ * path or the staged grouped fallback according to compile-time configuration.
+ *
+ * @param seq_len Number of sequence positions to process for both learners.
+ * @param blocks Two learner-specific transformer block objects.
+ * @param inputs Two packed int8 input buffers, one per learner.
+ * @param outputs Two packed int8 output buffers that receive the final block outputs.
+ */
 void TransformerBlock::computeGroup2(std::size_t seq_len,
                                      TransformerBlock* blocks[2],
                                      uint32_t* const inputs[2],
@@ -1235,6 +1375,17 @@ void TransformerBlock::computeGroup2(std::size_t seq_len,
     computeGroupImpl<2u>(seq_len, blocks, inputs, outputs);
 }
 
+/**
+ * @brief Public grouped transformer entry point for four learners.
+ *
+ * Forwards to `computeGroupImpl<4u>`, which selects either the full interleaved
+ * path or the staged grouped fallback according to compile-time configuration.
+ *
+ * @param seq_len Number of sequence positions to process for all four learners.
+ * @param blocks Four learner-specific transformer block objects.
+ * @param inputs Four packed int8 input buffers, one per learner.
+ * @param outputs Four packed int8 output buffers that receive the final block outputs.
+ */
 void TransformerBlock::computeGroup4(std::size_t seq_len,
                                      TransformerBlock* blocks[4],
                                      uint32_t* const inputs[4],

@@ -52,3 +52,4 @@ dump_index	checkpoint	interval_since_previous
 12	final_total	non_GEMM_after_ff2
 11	after_ff2	FF2
 12	final_total	non_GEMM_after_ff2
+13	after_mha	MHA

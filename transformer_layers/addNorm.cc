@@ -70,10 +70,28 @@ void AddNormalize::compute(uint32_t *input, uint32_t *output) {
     }
 }
 
+/**
+ * @brief Apply residual add and layer normalization to four learners at once.
+ *
+ * Both input buffers use the fully interleaved int8 layout:
+ * [seq][feature][learner].  For example, the four learner values for token
+ * seq and feature feature are stored next to each other at
+ * ((seq * input_dim_ + feature) * 4).
+ *
+ * Step-by-step for each sequence row:
+ * 1. Add the residual input into the current output activation, lane by lane.
+ * 2. Accumulate one sum per learner while the residual result is being written.
+ * 3. Convert those sums into one mean per learner over the feature dimension.
+ * 4. Re-scan the row and accumulate one variance per learner.
+ * 5. Convert variance into an integer inverse standard deviation scale.
+ * 6. Normalize every feature independently for each learner and write it back
+ *    in the same interleaved output buffer.
+ */
 void AddNormalize::computeInterleaved4D(int8_t *input_interleaved, int8_t *output_interleaved) {
     for (std::size_t seq = 0; seq < seq_len_; seq++) {
         int32_t sum[4] = {0, 0, 0, 0};
 
+        // First pass: residual add, output = output + input, and collect sums.
         for (std::size_t feature = 0; feature < input_dim_; feature++) {
             int8_t* out_slot = output_interleaved + ((seq * input_dim_ + feature) * 4u);
             const int8_t* in_slot = input_interleaved + ((seq * input_dim_ + feature) * 4u);
@@ -84,11 +102,13 @@ void AddNormalize::computeInterleaved4D(int8_t *input_interleaved, int8_t *outpu
             }
         }
 
+        // Mean is computed independently for each learner over this sequence row.
         int32_t mean[4];
         for (std::size_t learner = 0; learner < 4u; learner++) {
             mean[learner] = sum[learner] / static_cast<int32_t>(input_dim_);
         }
 
+        // Second pass: accumulate squared distance from the learner-specific mean.
         int32_t variance[4] = {0, 0, 0, 0};
         for (std::size_t feature = 0; feature < input_dim_; feature++) {
             const int8_t* out_slot = output_interleaved + ((seq * input_dim_ + feature) * 4u);
@@ -98,6 +118,8 @@ void AddNormalize::computeInterleaved4D(int8_t *input_interleaved, int8_t *outpu
             }
         }
 
+        // Keep the same fixed-point convention as compute(): scale by 2^8 and
+        // add 1 to the denominator to avoid division by zero on flat rows.
         int32_t sd_inv[4];
         for (std::size_t learner = 0; learner < 4u; learner++) {
             variance[learner] = variance[learner] / static_cast<int32_t>(input_dim_);
@@ -105,6 +127,8 @@ void AddNormalize::computeInterleaved4D(int8_t *input_interleaved, int8_t *outpu
             sd_inv[learner] = static_cast<int32_t>((1 << 8) / (sd + 1));
         }
 
+        // Final pass: center by mean, apply inverse stddev scale, and shift
+        // back down from the 2^8 fixed-point scale.
         for (std::size_t feature = 0; feature < input_dim_; feature++) {
             int8_t* out_slot = output_interleaved + ((seq * input_dim_ + feature) * 4u);
             for (std::size_t learner = 0; learner < 4u; learner++) {
@@ -116,10 +140,27 @@ void AddNormalize::computeInterleaved4D(int8_t *input_interleaved, int8_t *outpu
     }
 }
 
+/**
+ * @brief Apply residual add and layer normalization to two learners at once.
+ *
+ * The data layout is [seq][feature][learner] with two learner lanes per logical
+ * element.  Each learner is normalized independently, but keeping the lanes
+ * adjacent lets the pipeline process two learners through one shared buffer.
+ *
+ * Step-by-step for each sequence row:
+ * 1. Add residual activations from input_interleaved into output_interleaved.
+ * 2. Collect one row sum per learner during the residual-add pass.
+ * 3. Divide by input_dim_ to get each learner's mean.
+ * 4. Revisit the row to compute each learner's variance.
+ * 5. Convert variance to the fixed-point inverse standard deviation scale.
+ * 6. Normalize each feature value in place while preserving the 2D interleaved
+ *    ordering.
+ */
 void AddNormalize::computeInterleaved2D(int8_t *input_interleaved, int8_t *output_interleaved) {
     for (std::size_t seq = 0; seq < seq_len_; seq++) {
         int32_t sum[2] = {0, 0};
 
+        // First pass: residual add, output = output + input, and collect sums.
         for (std::size_t feature = 0; feature < input_dim_; feature++) {
             int8_t* out_slot = output_interleaved + ((seq * input_dim_ + feature) * 2u);
             const int8_t* in_slot = input_interleaved + ((seq * input_dim_ + feature) * 2u);
@@ -130,11 +171,13 @@ void AddNormalize::computeInterleaved2D(int8_t *input_interleaved, int8_t *outpu
             }
         }
 
+        // Mean is tracked separately for learner 0 and learner 1.
         int32_t mean[2];
         for (std::size_t learner = 0; learner < 2u; learner++) {
             mean[learner] = sum[learner] / static_cast<int32_t>(input_dim_);
         }
 
+        // Second pass: compute per-learner variance from the residual-added row.
         int32_t variance[2] = {0, 0};
         for (std::size_t feature = 0; feature < input_dim_; feature++) {
             const int8_t* out_slot = output_interleaved + ((seq * input_dim_ + feature) * 2u);
@@ -144,6 +187,8 @@ void AddNormalize::computeInterleaved2D(int8_t *input_interleaved, int8_t *outpu
             }
         }
 
+        // Fixed-point inverse stddev.  The +1 mirrors compute() and prevents a
+        // zero denominator when all values in the row are identical.
         int32_t sd_inv[2];
         for (std::size_t learner = 0; learner < 2u; learner++) {
             variance[learner] = variance[learner] / static_cast<int32_t>(input_dim_);
@@ -151,6 +196,7 @@ void AddNormalize::computeInterleaved2D(int8_t *input_interleaved, int8_t *outpu
             sd_inv[learner] = static_cast<int32_t>((1 << 8) / (sd + 1));
         }
 
+        // Final pass: normalize in place and keep the learner lanes interleaved.
         for (std::size_t feature = 0; feature < input_dim_; feature++) {
             int8_t* out_slot = output_interleaved + ((seq * input_dim_ + feature) * 2u);
             for (std::size_t learner = 0; learner < 2u; learner++) {

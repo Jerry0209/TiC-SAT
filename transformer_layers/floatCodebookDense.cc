@@ -14,10 +14,15 @@ namespace TransformerFloat {
 
 namespace {
 
+// The generated codebook stores quantized weights as indexes into a codebook.
+// bits_per_cb gives the number of bits per index, so the table has 2^bits
+// entries.
 std::size_t codebookSize(const GeneratedCodebookLayerView& view) {
     return static_cast<std::size_t>(1u) << view.bits_per_cb;
 }
 
+// Look up one generated layer by name and make sure the registry contains
+// enough learner-specific data for the requested execution mode.
 const GeneratedCodebookLayerView& layerView(const std::string& name,
                                             std::size_t required_learners) {
     const GeneratedCodebookLayerView* view = findGeneratedCodebookLayer(name.c_str());
@@ -31,6 +36,9 @@ const GeneratedCodebookLayerView& layerView(const std::string& name,
     return *view;
 }
 
+// Select the compact weight-index stream for one learner. SAME_SEQ layers share
+// one index stream across learners; diff-seq layers keep per-learner streams
+// packed one after another.
 const uint32_t* weightIdxForLearner(const GeneratedCodebookLayerView& view,
                                     std::size_t learner) {
     if (view.same_seq || view.weight_idx_by_learner == nullptr) {
@@ -39,6 +47,8 @@ const uint32_t* weightIdxForLearner(const GeneratedCodebookLayerView& view,
     return view.weight_idx_by_learner + learner * getGeneratedWeightIdxCount(view);
 }
 
+// Select the int8 codebook for one learner. Some generated layers expose one
+// shared codebook, while others expose a codebook array indexed by learner.
 const int8_t* codebookForLearner(const GeneratedCodebookLayerView& view,
                                  std::size_t learner) {
     if (view.codebooks_int8 == nullptr) {
@@ -47,6 +57,8 @@ const int8_t* codebookForLearner(const GeneratedCodebookLayerView& view,
     return view.codebooks_int8 + learner * codebookSize(view);
 }
 
+// Select the bias vector for one learner, following the same shared/per-learner
+// convention used by the generated registry.
 const float* biasForLearner(const GeneratedCodebookLayerView& view,
                             std::size_t learner) {
     if (view.biases == nullptr) {
@@ -55,6 +67,11 @@ const float* biasForLearner(const GeneratedCodebookLayerView& view,
     return view.biases + learner * view.output_size;
 }
 
+// Return an FP32 codebook for the single-learner path.
+//
+// Preferred path: use an FP32 codebook emitted by the generator.
+// Fallback path: widen the int8 codebook into scratch storage so the FP32
+// reference kernels can consume the same registry entry.
 const float* codebookFp32ForLearner(const GeneratedCodebookLayerView& view,
                                     std::size_t learner,
                                     Matrix& scratch) {
@@ -78,6 +95,9 @@ const float* codebookFp32ForLearner(const GeneratedCodebookLayerView& view,
     return scratch.data();
 }
 
+// Build or retrieve the interleaved FP32 codebook used by grouped kernels.
+// Layout is [codebook_entry][learner], so all learners' values for the same
+// codebook entry are adjacent in memory.
 const float* codebookFp32Interleaved(const GeneratedCodebookLayerView& view,
                                      std::size_t learner_count,
                                      Matrix& scratch) {
@@ -103,6 +123,9 @@ const float* codebookFp32Interleaved(const GeneratedCodebookLayerView& view,
     return scratch.data();
 }
 
+// Return bias values in the same [output_channel][learner] interleaved layout
+// used by the grouped FP32 kernels. Missing bias data is represented as nullptr;
+// missing per-learner bias values are treated as zero in the scratch fallback.
 const float* biasFp32Interleaved(const GeneratedCodebookLayerView& view,
                                  std::size_t learner_count,
                                  Matrix& scratch) {
@@ -124,6 +147,10 @@ const float* biasFp32Interleaved(const GeneratedCodebookLayerView& view,
     return scratch.data();
 }
 
+// Convert registry metadata into the compact GEMM descriptor consumed by the
+// generated dense-layer kernels. The row count comes from the runtime sequence
+// length, while input/output dimensions and packing metadata come from the
+// generated registry view.
 gemm_t makeGemmLayer(const GeneratedCodebookLayerView& view, std::size_t rows) {
     gemm_t layer;
     layer.seq_len = static_cast<uint16_t>(rows);
@@ -138,9 +165,17 @@ gemm_t makeGemmLayer(const GeneratedCodebookLayerView& view, std::size_t rows) {
 FloatCodebookDense::FloatCodebookDense(std::string layer_name, std::size_t learner)
     : layer_name_(std::move(layer_name)), learner_(learner) {}
 
+// Execute one generated codebook-dense layer for a single learner.
+//
+// The layer is used for Q/K/V projections, the attention output projection
+// ("condense"), and the two feed-forward projections. The compact GEMM kernel
+// reconstructs weights from weight indexes plus codebook values instead of
+// reading a full dense weight matrix.
 void FloatCodebookDense::compute(std::size_t rows,
                                  const float* input,
                                  Matrix& output) const {
+    // Step 1: Fetch the generated layer view and choose the learner-specific
+    // weight indexes, codebook, and bias.
     const auto& view = layerView(layer_name_, learner_ + 1u);
     const uint32_t* weight_idx = weightIdxForLearner(view, learner_);
     Matrix codebook_scratch;
@@ -151,6 +186,8 @@ void FloatCodebookDense::compute(std::size_t rows,
         throw std::runtime_error("FP32 transformer registry entry is incomplete: " + layer_name_);
     }
 
+    // Step 2: Allocate the output matrix and call the scalar or SVE compact GEMM
+    // implementation selected at build time.
     output.assign(rows * view.output_size, 0.0f);
     const gemm_t layer = makeGemmLayer(view, rows);
 
@@ -163,10 +200,15 @@ void FloatCodebookDense::compute(std::size_t rows,
 #endif
 }
 
+// Execute the same dense layer for a grouped 2D or 4D learner run using
+// interleaved buffers. The input and output layout is [matrix_element][learner],
+// which lets the GEMM implementation process multiple learners together.
 void FloatCodebookDense::computeInterleaved(std::size_t learner_count,
                                             const float* input_interleaved,
                                             std::size_t rows,
                                             Matrix& output_interleaved) const {
+    // Step 1: Fetch registry data for all learners and materialize interleaved
+    // codebook/bias arrays when the generator did not provide them directly.
     const auto& view = layerView(layer_name_, learner_count);
     output_interleaved.assign(rows * view.output_size * learner_count, 0.0f);
 
@@ -182,6 +224,8 @@ void FloatCodebookDense::computeInterleaved(std::size_t learner_count,
 
     const gemm_t layer = makeGemmLayer(view, rows);
 
+    // Step 2: Two-learner grouped FP32 execution currently supports only
+    // SAME_SEQ, where all learners share the same weight-index stream.
     if (learner_count == 2u) {
         if (!view.same_seq) {
             throw std::runtime_error(
@@ -199,6 +243,8 @@ void FloatCodebookDense::computeInterleaved(std::size_t learner_count,
         return;
     }
 
+    // Step 3: Four-learner execution has both SAME_SEQ and diff-seq kernels. The
+    // diff-seq path needs a generated interleaved weight-index stream.
     if (learner_count == 4u) {
         if (view.same_seq) {
 #ifdef SIMD
@@ -231,6 +277,8 @@ void FloatCodebookDense::computeInterleaved(std::size_t learner_count,
         return;
     }
 
+    // Step 4: Any other grouped width is rejected because there are no matching
+    // compact GEMM kernels in this implementation.
     throw std::runtime_error(
         "FP32 interleaved path supports only 2D or 4D learners: " + layer_name_);
 }

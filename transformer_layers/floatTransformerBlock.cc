@@ -15,6 +15,9 @@ namespace TransformerFloat {
 
 namespace {
 
+// Copy one attention head output into its slice of the concatenated multi-head
+// matrix. Each head produces [seq_len x head_hidden_size]; the transformer block
+// stores all heads side by side as [seq_len x (num_heads * head_hidden_size)].
 void copyHeadToMultihead(const float* head,
                          float* multihead,
                          std::size_t seq_len,
@@ -32,6 +35,12 @@ void copyHeadToMultihead(const float* head,
     }
 }
 
+// Interleaved version of copyHeadToMultihead(). Values for multiple learners
+// are stored next to each other in memory:
+//   logical_value(row, col, learner)
+//     -> buffer[(row * cols + col) * learner_count + learner]
+// This layout lets grouped FP32 kernels process the same logical position for
+// several learners together.
 void copyHeadToMultiheadInterleaved(const float* head_interleaved,
                                     float* multihead_interleaved,
                                     std::size_t learner_count,
@@ -56,6 +65,8 @@ void copyHeadToMultiheadInterleaved(const float* head_interleaved,
     }
 }
 
+// Profiling label used by the grouped, but not fully interleaved, execution
+// path. The static_assert documents the only supported grouped widths.
 template <std::size_t LearnerCount>
 const char* groupedScope() {
     static_assert(LearnerCount == 2u || LearnerCount == 4u,
@@ -67,6 +78,8 @@ const char* groupedScope() {
 }
 
 #if CFG_FULL_INTERLEAVED_PIPELINE
+// Profiling label used when the whole transformer block keeps learner data in
+// interleaved layout from input through output.
 template <std::size_t LearnerCount>
 const char* fullInterleavedScope() {
     static_assert(LearnerCount == 2u || LearnerCount == 4u,
@@ -97,6 +110,9 @@ FloatTransformerBlock::FloatTransformerBlock(std::size_t pre_seq_len,
       condense_("condense", learner_idx),
       feed_forward0_("ff0", learner_idx),
       feed_forward1_("ff1", learner_idx) {
+    // Create one single-head attention object per head. The block later calls
+    // each head, concatenates their outputs, and projects the combined tensor
+    // back to the model dimension with the condense layer.
     selfatten_.reserve(num_heads_);
     for (std::size_t head = 0; head < num_heads_; head++) {
         selfatten_.push_back(new FloatSingleHeadSelfAttn(
@@ -110,16 +126,28 @@ FloatTransformerBlock::FloatTransformerBlock(std::size_t pre_seq_len,
 }
 
 FloatTransformerBlock::~FloatTransformerBlock() {
+    // The attention heads are allocated explicitly in the constructor, so the
+    // destructor releases them here before the block goes away.
     for (auto* head : selfatten_) {
         delete head;
     }
 }
 
+// Execute one FP32 transformer block for a single learner.
+//
+// The block follows the standard transformer encoder structure:
+//   1. run all self-attention heads,
+//   2. concatenate and project the heads,
+//   3. add the residual input and layer-normalize,
+//   4. run the two feed-forward layers,
+//   5. add the second residual and layer-normalize.
 void FloatTransformerBlock::compute(std::size_t seq_len,
                                     const float* input,
                                     float* output) {
     resetTransformerStatsWindow("fp32_single_transformer_block");
 
+    // Step 1: Compute every attention head independently and copy each head into
+    // its column range of the multi-head output matrix.
     multihead_out_.assign(seq_len * num_heads_ * head_hidden_size_, 0.0f);
     for (std::size_t head = 0; head < num_heads_; head++) {
         std::cout << "Head : " << head << std::endl;
@@ -138,12 +166,16 @@ void FloatTransformerBlock::compute(std::size_t seq_len,
         seq_len, num_heads_ * head_hidden_size_);
     dumpTransformerStatsCheckpointIfProfiling("after_mha", "MHA");
 
+    // Step 2: Project the concatenated heads back from the multi-head dimension
+    // to the transformer model dimension.
     std::cout << "Condense" << std::endl;
     condense_.compute(seq_len, multihead_out_.data(), condense_out_);
     dumpFloatMatrixIfEnabled(
         dump_dir_, "condense_out.txt", condense_out_.data(), seq_len, input_dim_);
     dumpTransformerStatsCheckpointIfProfiling("after_projection", "Projection");
 
+    // Step 3: Apply the attention residual connection. add_norm_ mutates
+    // condense_out_ in place by adding input and then layer-normalizing rows.
     std::cout << "Add Norm" << std::endl;
     add_norm_.compute(input, condense_out_.data());
     dumpFloatMatrixIfEnabled(
@@ -151,6 +183,8 @@ void FloatTransformerBlock::compute(std::size_t seq_len,
     dumpTransformerStatsCheckpointIfProfiling("after_attn_addnorm",
                                               "non_GEMM_after_projection");
 
+    // Step 4: First feed-forward layer expands from model dimension to the
+    // configured feed-forward dimension.
     std::cout << "Feed Forward 0" << std::endl;
     feed_forward0_.compute(seq_len, condense_out_.data(), intermediate_ff_);
     dumpFloatMatrixIfEnabled(
@@ -160,6 +194,7 @@ void FloatTransformerBlock::compute(std::size_t seq_len,
                       intermediate_ff_.size());
     dumpTransformerStatsCheckpointIfProfiling("after_ff1", "FF1");
 
+    // Step 5: Second feed-forward layer projects back to the model dimension.
     std::cout << "Feed Forward 1" << std::endl;
     feed_forward1_.compute(seq_len, intermediate_ff_.data(), ff1_out_);
     dumpFloatMatrixIfEnabled(
@@ -169,6 +204,9 @@ void FloatTransformerBlock::compute(std::size_t seq_len,
                       ff1_out_.size());
     dumpTransformerStatsCheckpointIfProfiling("after_ff2", "FF2");
 
+    // Step 6: Apply the feed-forward residual connection, copy the normalized
+    // result to the caller's output buffer, and record the final dump/profile
+    // boundary.
     std::cout << "Add Norm" << std::endl;
     add_norm_.compute(condense_out_.data(), ff1_out_.data());
     std::copy(ff1_out_.begin(), ff1_out_.end(), output);
@@ -187,6 +225,8 @@ void FloatTransformerBlock::computeGroupImpl(std::size_t seq_len,
                   "Only 2- and 4-learner grouped FP32 transformer execution is supported");
 
 #if CFG_FULL_INTERLEAVED_PIPELINE
+    // When enabled, the grouped path delegates to the fully interleaved pipeline
+    // so intermediate tensors remain interleaved across all block stages.
     if constexpr (LearnerCount == 2u) {
         computeGroup2FullInterleaved(seq_len, blocks, inputs, outputs);
         return;
@@ -204,10 +244,14 @@ void FloatTransformerBlock::computeGroupImpl(std::size_t seq_len,
     const std::size_t num_heads = blocks[0]->num_heads_;
     const std::size_t ff_size = blocks[0]->ff_size_;
 
+    // Step 1: Prepare each learner's multi-head output buffer.
     for (std::size_t learner = 0; learner < LearnerCount; learner++) {
         blocks[learner]->multihead_out_.assign(seq_len * num_heads * head_hidden_size, 0.0f);
     }
 
+    // Step 2: For each head index, run the matching head for every learner and
+    // copy each learner's result into that learner's concatenated multi-head
+    // matrix.
     for (std::size_t head = 0; head < num_heads; head++) {
         std::cout << "Head : " << head << std::endl;
 
@@ -243,6 +287,7 @@ void FloatTransformerBlock::computeGroupImpl(std::size_t seq_len,
     }
     dumpTransformerStatsCheckpointIfProfiling("after_mha", "MHA");
 
+    // Step 3: Condense each learner's concatenated heads back to model width.
     std::cout << "Condense" << std::endl;
     for (std::size_t learner = 0; learner < LearnerCount; learner++) {
         blocks[learner]->condense_.compute(
@@ -258,6 +303,8 @@ void FloatTransformerBlock::computeGroupImpl(std::size_t seq_len,
     }
     dumpTransformerStatsCheckpointIfProfiling("after_projection", "Projection");
 
+    // Step 4: Add the original input residual to the attention projection and
+    // layer-normalize each learner independently.
     std::cout << "Add Norm" << std::endl;
     for (std::size_t learner = 0; learner < LearnerCount; learner++) {
         blocks[learner]->add_norm_.compute(inputs[learner],
@@ -272,6 +319,7 @@ void FloatTransformerBlock::computeGroupImpl(std::size_t seq_len,
     dumpTransformerStatsCheckpointIfProfiling("after_attn_addnorm",
                                               "non_GEMM_after_projection");
 
+    // Step 5: Run the first feed-forward layer for each learner.
     std::cout << "Feed Forward 0" << std::endl;
     for (std::size_t learner = 0; learner < LearnerCount; learner++) {
         blocks[learner]->feed_forward0_.compute(
@@ -291,6 +339,7 @@ void FloatTransformerBlock::computeGroupImpl(std::size_t seq_len,
     }
     dumpTransformerStatsCheckpointIfProfiling("after_ff1", "FF1");
 
+    // Step 6: Run the second feed-forward layer to return to model width.
     std::cout << "Feed Forward 1" << std::endl;
     for (std::size_t learner = 0; learner < LearnerCount; learner++) {
         blocks[learner]->feed_forward1_.compute(
@@ -310,6 +359,8 @@ void FloatTransformerBlock::computeGroupImpl(std::size_t seq_len,
     }
     dumpTransformerStatsCheckpointIfProfiling("after_ff2", "FF2");
 
+    // Step 7: Add the feed-forward residual, normalize, and copy each learner's
+    // final matrix into the output buffer supplied by the caller.
     std::cout << "Add Norm" << std::endl;
     for (std::size_t learner = 0; learner < LearnerCount; learner++) {
         blocks[learner]->add_norm_.compute(blocks[learner]->condense_out_.data(),
@@ -333,6 +384,9 @@ void FloatTransformerBlock::computeFullInterleavedBlock(std::size_t seq_len,
                                                         FloatTransformerBlock** blocks,
                                                         const float* const* inputs,
                                                         float* const* outputs) {
+    // Fully interleaved execution stores all learners in one physical matrix at
+    // each stage. This is used to exercise the interleaved GEMM kernels while
+    // preserving the same transformer math as the single-learner path.
     resetTransformerStatsWindow(fullInterleavedScope<LearnerCount>());
 
     const std::size_t input_dim = blocks[0]->input_dim_;
@@ -346,8 +400,12 @@ void FloatTransformerBlock::computeFullInterleavedBlock(std::size_t seq_len,
     }
 
     Matrix input_interleaved;
+    // Step 1: Convert separate learner input matrices into the interleaved
+    // layout expected by the grouped FP32 kernels.
     interleaveLearnerMatrices(inputs, LearnerCount, seq_len, input_dim, input_interleaved);
 
+    // Step 2: Compute every attention head in interleaved layout, then copy each
+    // interleaved head into its multi-head column range.
     Matrix multihead_interleaved(seq_len * num_heads * head_hidden_size * LearnerCount, 0.0f);
     for (std::size_t head = 0; head < num_heads; head++) {
         std::cout << "Head : " << head << std::endl;
@@ -383,6 +441,7 @@ void FloatTransformerBlock::computeFullInterleavedBlock(std::size_t seq_len,
                                  LearnerCount);
     dumpTransformerStatsCheckpointIfProfiling("after_mha", "MHA");
 
+    // Step 3: Apply the shared interleaved projection layer.
     std::cout << "Condense" << std::endl;
     Matrix condense_interleaved;
     blocks[0]->condense_.computeInterleaved(
@@ -395,6 +454,8 @@ void FloatTransformerBlock::computeFullInterleavedBlock(std::size_t seq_len,
                                  LearnerCount);
     dumpTransformerStatsCheckpointIfProfiling("after_projection", "Projection");
 
+    // Step 4: Add the interleaved input residual and layer-normalize each
+    // learner stream independently inside the same buffer.
     std::cout << "Add Norm" << std::endl;
     blocks[0]->add_norm_.computeInterleaved(
         input_interleaved.data(), condense_interleaved.data(), LearnerCount);
@@ -407,6 +468,8 @@ void FloatTransformerBlock::computeFullInterleavedBlock(std::size_t seq_len,
     dumpTransformerStatsCheckpointIfProfiling("after_attn_addnorm",
                                               "non_GEMM_after_projection");
 
+    // Step 5: Run the two feed-forward layers while keeping learner values
+    // interleaved.
     std::cout << "Feed Forward 0" << std::endl;
     Matrix ff0_interleaved;
     blocks[0]->feed_forward0_.computeInterleaved(
@@ -447,6 +510,8 @@ void FloatTransformerBlock::computeFullInterleavedBlock(std::size_t seq_len,
     }
     dumpTransformerStatsCheckpointIfProfiling("after_ff2", "FF2");
 
+    // Step 6: Add the second residual, dump the interleaved final tensor, and
+    // split it back into the per-learner output buffers expected by the caller.
     std::cout << "Add Norm" << std::endl;
     blocks[0]->add_norm_.computeInterleaved(
         condense_interleaved.data(), ff1_interleaved.data(), LearnerCount);

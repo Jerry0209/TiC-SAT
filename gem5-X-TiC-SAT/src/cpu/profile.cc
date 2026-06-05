@@ -46,6 +46,16 @@ ProfileNode::ProfileNode()
     : count(0)
 { }
 
+/**
+ * Write this node and all children in gem5's function-profile dump format.
+ *
+ * @param symbol Printable function/scope name associated with this node.
+ * @param id Stable identifier emitted for this node in the dump. Callers use
+ *        the node address for child nodes and 0 for the synthetic top node.
+ * @param symtab Symbol table used to translate child return addresses back to
+ *        function names.
+ * @param os Output stream that receives the profile graph.
+ */
 void
 ProfileNode::dump(const string &symbol, uint64_t id, const SymbolTable *symtab,
                   ostream &os) const
@@ -76,6 +86,9 @@ ProfileNode::dump(const string &symbol, uint64_t id, const SymbolTable *symtab,
     }
 }
 
+/**
+ * Reset this node's sample count and recursively reset all child nodes.
+ */
 void
 ProfileNode::clear()
 {
@@ -85,6 +98,15 @@ ProfileNode::clear()
         i->second->clear();
 }
 
+/**
+ * Create a function profiler using the simulator's symbol table.
+ *
+ * @param _symtab Symbol table used later to translate sampled PCs and stack
+ *        addresses into function names during dump() and sample().
+ *
+ * The constructor also registers a stats reset callback so gem5 can clear this
+ * profile together with the rest of the simulator statistics.
+ */
 FunctionProfile::FunctionProfile(const SymbolTable *_symtab)
     : reset(0), symtab(_symtab)
 {
@@ -98,6 +120,15 @@ FunctionProfile::~FunctionProfile()
         delete reset;
 }
 
+/**
+ * Convert a sampled call stack into nodes in the profile tree.
+ *
+ * @param stack Vector of program counters collected by the ISA stack tracer.
+ *        Entries are consumed in reverse vector order so the tree root follows
+ *        the caller side of the stack and leaves represent the sampled frame.
+ *
+ * @return ProfileNode corresponding to the leaf frame for this stack sample.
+ */
 ProfileNode *
 FunctionProfile::consume(const vector<Addr> &stack)
 {
@@ -113,6 +144,9 @@ FunctionProfile::consume(const vector<Addr> &stack)
     return current;
 }
 
+/**
+ * Clear all accumulated function-tree and per-PC profile counters.
+ */
 void
 FunctionProfile::clear()
 {
@@ -120,9 +154,19 @@ FunctionProfile::clear()
     pc_count.clear();
 }
 
+/**
+ * Dump the flat PC histogram and hierarchical function profile.
+ *
+ * @param tc Thread context associated with the profile dump. The current
+ *        implementation does not need it, but the parameter keeps the public
+ *        interface aligned with CPU/profile callers.
+ * @param os Output stream that receives the text profile data.
+ */
 void
 FunctionProfile::dump(ThreadContext *tc, ostream &os) const
 {
+    (void)tc;
+
     ccprintf(os, ">>>PC data\n");
     map<Addr, Counter>::const_iterator i, end = pc_count.end();
     for (i = pc_count.begin(); i != end; ++i) {
@@ -142,6 +186,15 @@ FunctionProfile::dump(ThreadContext *tc, ostream &os) const
     top.dump("top", 0, symtab, os);
 }
 
+/**
+ * Record one profiling sample for a leaf node and program counter.
+ *
+ * @param node Leaf ProfileNode returned by consume(); its count is incremented
+ *        to represent one observed stack sample.
+ * @param pc Current program counter for the sample. If the symbol table can map
+ *        it to a function start address, that symbol address is counted;
+ *        otherwise the raw PC is counted so unsymbolized samples are preserved.
+ */
 void
 FunctionProfile::sample(ProfileNode *node, Addr pc)
 {

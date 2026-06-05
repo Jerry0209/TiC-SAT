@@ -1,6 +1,8 @@
 # aarch64-linux-gnu-g++ transformer.cpp transformer_layers/*.cc accelerator/smm_gem.cpp accelerator/systolic_m2m.cc   -o transformer.o -DSA_SIZE=16 -DDEVELOP -DCORE_NUM=1 -fopenmp -O2
 # aarch64-linux-gnu-g++ -static transformer.cpp transformer_layers/*.cc accelerator/smm_gem.cpp accelerator/systolic_m2m.cc -o transformer.o -DSA_SIZE=16 -DDEVELOP -DCORE_NUM=1 -fopenmp -O2
 
+
+# Change below and use the compiler on your laptop
 unset CC CXX CPATH LIBRARY_PATH LD_LIBRARY_PATH PKG_CONFIG_PATH CPPFLAGS LDFLAGS
 
 
@@ -21,6 +23,7 @@ export A64CXX
 export A64SYSROOT="$($A64CXX -print-sysroot 2>/dev/null || true)"
 
 
+# Control MACRO (Not required to change)
 EXTRA_DEFS=""
 EXTRA_CXXFLAGS=""
 GEMM_SVE_SRC=""
@@ -84,17 +87,7 @@ echo "  USE_FP32_TRANSFORMER_FLAG=${USE_FP32_TRANSFORMER_FLAG:-0}"
 echo "  DENSE_NO_SIMD_BASELINE_FLAG=${DENSE_NO_SIMD_BASELINE_FLAG:-0}"
 echo "  SIMD_FLAG=${SIMD_FLAG:-0}"
 
-# Symbolic link to required library
-# mkdir -p "$A64SYSROOT/lib"
 
-# ln -sf "$CONDA_PREFIX/lib/gcc/aarch64-conda-linux-gnu/13.4.0/libgomp.so.1" \
-#        "$A64SYSROOT/lib/libgomp.so.1"
-
-# ln -sf "$CONDA_PREFIX/lib/gcc/aarch64-conda-linux-gnu/13.4.0/libstdc++.so.6" \
-#        "$A64SYSROOT/lib/libstdc++.so.6"
-
-# ln -sf "$CONDA_PREFIX/lib/gcc/aarch64-conda-linux-gnu/13.4.0/libgcc_s.so.1" \
-#        "$A64SYSROOT/lib/libgcc_s.so.1"
 
 "$A64CXX" -std=c++17 -O2 -Wall \
   $EXTRA_CXXFLAGS \
@@ -120,35 +113,13 @@ echo "  SIMD_FLAG=${SIMD_FLAG:-0}"
   -Wl,--end-group \
   -pthread
 
-# conda activate gem5_env
-# source compile_transformer.sh 
-# USE_CODEBOOK=1 source compile_transformer.sh
-
+# Legacy command from TiC-SAT
 #   -DDEBUG_SMALL_MODEL \
-#   -DRELOAD_WEIGHT \
-#   -DUSE_NOTEBOOK_GENERATED_WEIGHTS \
-#   -DUSE_CODEBOOK_GEMM \
 
 
 
-# Run config v3.0 with SIMD
-# New weights, default dense, SIMD enabled
-# SIMD_FLAG=1 RELOAD_WEIGHT_FLAG=0 USE_NOTEBOOK_GENERATED_WEIGHTS_FLAG=0 USE_CODEBOOK_GEMM_FLAG=0 ENABLE_CODEBOOK_REFERENCE_FLAG=0 ENABLE_DEBUG_PRINT_FLAG=0 PROFILE_GEMM_ONLY_FLAG=0 source compile_transformer.sh
 
-# Old weights, original, default dense, SIMD enabled
-# SIMD_FLAG=1 RELOAD_WEIGHT_FLAG=1 USE_NOTEBOOK_GENERATED_WEIGHTS_FLAG=0 USE_CODEBOOK_GEMM_FLAG=0 ENABLE_CODEBOOK_REFERENCE_FLAG=0 ENABLE_DEBUG_PRINT_FLAG=0 PROFILE_GEMM_ONLY_FLAG=0 source compile_transformer.sh
 
-# Old weights, notebook generated, default dense, SIMD enabled
-# SIMD_FLAG=1 RELOAD_WEIGHT_FLAG=1 USE_NOTEBOOK_GENERATED_WEIGHTS_FLAG=1 USE_CODEBOOK_GEMM_FLAG=0 ENABLE_CODEBOOK_REFERENCE_FLAG=0 ENABLE_DEBUG_PRINT_FLAG=0 PROFILE_GEMM_ONLY_FLAG=0 source compile_transformer.sh
-
-# Old weights, codebooked GEMM, reference mode, SIMD enabled (if in codebooked GEMM, automatically choose multiple learner implementation)
-# SIMD_FLAG=1 RELOAD_WEIGHT_FLAG=1 USE_NOTEBOOK_GENERATED_WEIGHTS_FLAG=1 USE_CODEBOOK_GEMM_FLAG=1 ENABLE_CODEBOOK_REFERENCE_FLAG=1 ENABLE_DEBUG_PRINT_FLAG=1 PROFILE_GEMM_ONLY_FLAG=0 source compile_transformer.sh
-
-# Only codebook GEMM, clean mode, SIMD enabled
-# SIMD_FLAG=1 RELOAD_WEIGHT_FLAG=1 USE_NOTEBOOK_GENERATED_WEIGHTS_FLAG=1 USE_CODEBOOK_GEMM_FLAG=1 ENABLE_CODEBOOK_REFERENCE_FLAG=0 ENABLE_DEBUG_PRINT_FLAG=0 PROFILE_GEMM_ONLY_FLAG=0 source compile_transformer.sh
-
-# Profiling mode, SIMD enabled
-# SIMD_FLAG=1 RELOAD_WEIGHT_FLAG=1 USE_NOTEBOOK_GENERATED_WEIGHTS_FLAG=1 USE_CODEBOOK_GEMM_FLAG=1 ENABLE_CODEBOOK_REFERENCE_FLAG=0 ENABLE_DEBUG_PRINT_FLAG=0 PROFILE_GEMM_ONLY_FLAG=1 source compile_transformer.sh
 
 # No-SIMD dense sequential learner baseline
 # Set N_LEARNERS in Full_NN/gemm_definitions/codebooks_def.h to 1, 2, or 4 first.
@@ -196,24 +167,13 @@ echo "  SIMD_FLAG=${SIMD_FLAG:-0}"
 # USE_CODEBOOK_GEMM_FLAG: use default dense or codebook dense (enable USE_NOTEBOOK_GENERATED_WEIGHTS_FLAG first to use codebook computation)
 # ENABLE_CODEBOOK_REFERENCE_FLAG: parallel load .bin and compute default dense as reference (only effective when USE_CODEBOOK_GEMM_FLAG = 1)
 
-# Run this command to run Transformer with aarch64 on eslsrv12
-# qemu-aarch64 -L "$A64SYSROOT" ./transformer.o 
-# cp ~/TiC-SAT-Jerry/transformer.o /home/jerry/gem5/shared_folder/
-# cp ~/TiC-SAT/transformer.o ~/gem5/shared_folder/
 
 
 
-# conda activate gem5_env
-# SYSROOT=$(aarch64-conda-linux-gnu-g++ -print-sysroot)
-
-# $HOME/opt/qemu-sve/bin/qemu-aarch64 \
-#   -cpu max,sve=on,sve-default-vector-length=16 \
-#   -L "$SYSROOT" \
-#   /tmp/test_single_layer_SVE_aarch64 q_h0 2 \
-#   < /tmp/test_single_layer_SVE_aarch64
 
 
-# QEMU SVE
+# QEMU SVE Commands (use QEMU path on your laptop)
+# The commands below are specific for my server environment, so plz do not use them directly
 # SYSROOT=$(/home/thu/miniforge3/envs/gem5_env/bin/aarch64-conda-linux-gnu-g++ -print-sysroot)
 
 # HOME/thu/opt/qemu-sve/bin/qemu-aarch64 \

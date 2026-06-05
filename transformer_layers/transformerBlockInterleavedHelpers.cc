@@ -13,6 +13,21 @@
 
 namespace {
 
+/**
+ * Validate that two learner layer pointers share a 2D SAME_SEQ CodebookDense
+ * implementation.
+ *
+ * @param label Layer name included in error messages for easier debugging.
+ * @param layers Two learner-specific LinearLayer pointers. Both must actually
+ *        point to CodebookDense instances that can run the 2D interleaved
+ *        SAME_SEQ kernel.
+ *
+ * @return The first CodebookDense instance, used to launch the grouped kernel.
+ *
+ * The first layer owns the shared interleaved registry data for the grouped
+ * path, but all learner entries are still checked so a partially constructed
+ * layer bundle fails early.
+ */
 CodebookDense* requireInterleavedCodebookDense2(const char* label,
                                                 LinearLayer* const layers[2]) {
     auto* primary = dynamic_cast<CodebookDense*>(layers[0]);
@@ -30,6 +45,16 @@ CodebookDense* requireInterleavedCodebookDense2(const char* label,
     return primary;
 }
 
+/**
+ * Validate that four learner layer pointers share a 4D DIFF_SEQ CodebookDense
+ * implementation.
+ *
+ * @param label Layer name included in error messages for easier debugging.
+ * @param layers Four learner-specific LinearLayer pointers. Every entry must
+ *        be a CodebookDense that exposes the 4D interleaved kernel.
+ *
+ * @return The first CodebookDense instance, used to launch the grouped kernel.
+ */
 CodebookDense* requireInterleavedCodebookDense4(const char* label,
                                                 LinearLayer* const layers[4]) {
     auto* primary = dynamic_cast<CodebookDense*>(layers[0]);
@@ -49,6 +74,18 @@ CodebookDense* requireInterleavedCodebookDense4(const char* label,
 
 } // namespace
 
+/**
+ * Run a two-learner CodebookDense layer on interleaved int8 activations.
+ *
+ * @param label Layer name used in validation error messages.
+ * @param layers Two learner-specific layer pointers from the layer factory.
+ *        They are checked for CodebookDense 2D interleaved support.
+ * @param seq_len Number of sequence rows to process.
+ * @param input_interleaved Input activation buffer laid out as
+ *        [seq][input_feature][learner] with two learner lanes.
+ * @param output_interleaved Destination buffer laid out as
+ *        [seq][output_feature][learner] with two learner lanes.
+ */
 void computeCodebookDenseInterleaved2D(const char* label,
                                        LinearLayer* const layers[2],
                                        std::size_t seq_len,
@@ -58,6 +95,18 @@ void computeCodebookDenseInterleaved2D(const char* label,
     primary->computeInterleaved2DToInt8(seq_len, input_interleaved, output_interleaved);
 }
 
+/**
+ * Run a four-learner CodebookDense layer on interleaved int8 activations.
+ *
+ * @param label Layer name used in validation error messages.
+ * @param layers Four learner-specific layer pointers from the layer factory.
+ *        They are checked for CodebookDense 4D interleaved support.
+ * @param seq_len Number of sequence rows to process.
+ * @param input_interleaved Input activation buffer laid out as
+ *        [seq][input_feature][learner] with four learner lanes.
+ * @param output_interleaved Destination buffer laid out as
+ *        [seq][output_feature][learner] with four learner lanes.
+ */
 void computeCodebookDenseInterleaved4D(const char* label,
                                        LinearLayer* const layers[4],
                                        std::size_t seq_len,
@@ -68,6 +117,15 @@ void computeCodebookDenseInterleaved4D(const char* label,
 }
 
 #if CFG_ENABLE_DEBUG_PRINT
+/**
+ * Print one learner's packed view of a 2D interleaved int8 buffer.
+ *
+ * @param label Prefix passed to printPackedPreview.
+ * @param input_interleaved Source buffer laid out as [row][col][learner].
+ * @param rows Number of logical matrix rows.
+ * @param cols Number of logical matrix columns.
+ * @param learner Learner lane to extract before packing and printing.
+ */
 void printInterleavedPackedPreview2D(const char* label,
                                      const int8_t* input_interleaved,
                                      std::size_t rows,
@@ -78,6 +136,15 @@ void printInterleavedPackedPreview2D(const char* label,
     printPackedPreview(label, packed.data(), packed.size());
 }
 
+/**
+ * Print one learner's packed view of a 4D interleaved int8 buffer.
+ *
+ * @param label Prefix passed to printPackedPreview.
+ * @param input_interleaved Source buffer laid out as [row][col][learner].
+ * @param rows Number of logical matrix rows.
+ * @param cols Number of logical matrix columns.
+ * @param learner Learner lane to extract before packing and printing.
+ */
 void printInterleavedPackedPreview4D(const char* label,
                                      const int8_t* input_interleaved,
                                      std::size_t rows,
@@ -90,6 +157,23 @@ void printInterleavedPackedPreview4D(const char* label,
 #endif
 
 #if CFG_USE_CODEBOOK_REFERENCE
+/**
+ * Compare a two-learner interleaved CodebookDense result against Dense output.
+ *
+ * @param label Base label used in comparison messages.
+ * @param references Dense reference layer for each of the two learner lanes.
+ * @param reference_outputs Scratch output buffers, one per learner. Each buffer
+ *        must hold (seq_len * output_cols) / 4 packed uint32_t words.
+ * @param learner_ids Model learner identifiers used only to make comparison
+ *        labels match the original learner numbering.
+ * @param seq_len Number of sequence rows in the input/candidate matrices.
+ * @param input_cols Number of input features per row before packing.
+ * @param output_cols Number of output features per row before packing.
+ * @param input_interleaved CodebookDense input laid out as
+ *        [seq][input_feature][learner].
+ * @param candidate_interleaved CodebookDense output laid out as
+ *        [seq][output_feature][learner].
+ */
 void compareInterleavedDenseReference2D(const char* label,
                                         LinearLayer* const references[2],
                                         uint32_t* const reference_outputs[2],
@@ -137,6 +221,23 @@ void compareInterleavedDenseReference2D(const char* label,
     }
 }
 
+/**
+ * Compare a four-learner interleaved CodebookDense result against Dense output.
+ *
+ * @param label Base label used in comparison messages.
+ * @param references Dense reference layer for each of the four learner lanes.
+ * @param reference_outputs Scratch output buffers, one per learner. Each buffer
+ *        must hold (seq_len * output_cols) / 4 packed uint32_t words.
+ * @param learner_ids Model learner identifiers used only to make comparison
+ *        labels match the original learner numbering.
+ * @param seq_len Number of sequence rows in the input/candidate matrices.
+ * @param input_cols Number of input features per row before packing.
+ * @param output_cols Number of output features per row before packing.
+ * @param input_interleaved CodebookDense input laid out as
+ *        [seq][input_feature][learner].
+ * @param candidate_interleaved CodebookDense output laid out as
+ *        [seq][output_feature][learner].
+ */
 void compareInterleavedDenseReference4D(const char* label,
                                         LinearLayer* const references[4],
                                         uint32_t* const reference_outputs[4],
@@ -184,6 +285,22 @@ void compareInterleavedDenseReference4D(const char* label,
     }
 }
 
+/**
+ * Compare a two-learner interleaved AddNorm result against scalar AddNorm.
+ *
+ * @param label Base label used in comparison messages.
+ * @param add_norm Reference AddNormalize implementation. It updates its second
+ *        packed buffer argument in place.
+ * @param learner_ids Model learner identifiers used only for comparison labels.
+ * @param seq_len Number of sequence rows in the matrices.
+ * @param cols Number of features per row before packing.
+ * @param residual_interleaved Residual input laid out as [seq][col][learner].
+ * @param pre_addnorm_interleaved Candidate's pre-AddNorm value laid out as
+ *        [seq][col][learner]; each learner is packed and used as the mutable
+ *        reference buffer.
+ * @param candidate_interleaved Interleaved AddNorm result to compare against
+ *        the reference output.
+ */
 void compareInterleavedAddNormReference2D(const char* label,
                                           AddNormalize* add_norm,
                                           const std::size_t learner_ids[2],
@@ -232,6 +349,22 @@ void compareInterleavedAddNormReference2D(const char* label,
     }
 }
 
+/**
+ * Compare a four-learner interleaved AddNorm result against scalar AddNorm.
+ *
+ * @param label Base label used in comparison messages.
+ * @param add_norm Reference AddNormalize implementation. It updates its second
+ *        packed buffer argument in place.
+ * @param learner_ids Model learner identifiers used only for comparison labels.
+ * @param seq_len Number of sequence rows in the matrices.
+ * @param cols Number of features per row before packing.
+ * @param residual_interleaved Residual input laid out as [seq][col][learner].
+ * @param pre_addnorm_interleaved Candidate's pre-AddNorm value laid out as
+ *        [seq][col][learner]; each learner is packed and used as the mutable
+ *        reference buffer.
+ * @param candidate_interleaved Interleaved AddNorm result to compare against
+ *        the reference output.
+ */
 void compareInterleavedAddNormReference4D(const char* label,
                                           AddNormalize* add_norm,
                                           const std::size_t learner_ids[4],

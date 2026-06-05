@@ -31,6 +31,15 @@
 
 #pragma once
 
+/*
+ * Centralized compile-time run-mode configuration.
+ *
+ * Each CFG_* macro below normalizes a build flag to either 1 or 0, so the rest
+ * of the transformer code can use simple #if checks without repeating
+ * #ifdef/#else blocks. The source build flags, such as RELOAD_WEIGHT or SIMD,
+ * are supplied by the Makefile/SCons command line.
+ */
+
 // --------------------------------------------------
 // Base runtime/data-source switches
 // --------------------------------------------------
@@ -41,12 +50,16 @@
 #define CFG_RELOAD_WEIGHT 0
 #endif
 
+// Use notebook-generated Dense .bin weights when runtime weight reloading is
+// enabled. These weights are needed by Dense fallback/reference execution.
 #if CFG_RELOAD_WEIGHT && defined(USE_NOTEBOOK_GENERATED_WEIGHTS)
 #define CFG_USE_NOTEBOOK_GENERATED_WEIGHTS 1
 #else
 #define CFG_USE_NOTEBOOK_GENERATED_WEIGHTS 0
 #endif
 
+// Use generated CodebookDense layers instead of the default Dense kernels when
+// weights are being reloaded and USE_CODEBOOK_GEMM is supplied.
 #if CFG_RELOAD_WEIGHT && defined(USE_CODEBOOK_GEMM)
 #define CFG_USE_CODEBOOK_GEMM 1
 #else
@@ -58,7 +71,7 @@
 // --------------------------------------------------
 
 // Enable Dense reference path and numerical comparison.
-// Default: OFF unless explicitly requested.
+// Default: OFF unless explicitly requested with ENABLE_CODEBOOK_REFERENCE.
 #if CFG_USE_CODEBOOK_GEMM && defined(ENABLE_CODEBOOK_REFERENCE)
 #define CFG_USE_CODEBOOK_REFERENCE 1
 #else
@@ -74,7 +87,8 @@
 #endif
 
 // Optional: a dedicated profiling mode.
-// If enabled, force-disable reference and debug printing.
+// If enabled, force-disable reference and debug printing so the measured region
+// is the CodebookDense GEMM path instead of validation or logging overhead.
 #ifdef PROFILE_GEMM_ONLY
 #define CFG_PROFILE_GEMM_ONLY 1
 #else
