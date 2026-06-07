@@ -57,6 +57,8 @@ All the experiments results are stored in: `/transformer_profiling`.
 
 A video of inference runtime is stored as `inference_runtime.mov`.
 
+The required Python/Conda environment is specified in `environment.yml` and `requirements.txt`.
+
 For final submission and evaluation, the generated `/weights` directory and `Full_NN/gemm_definitions` directory are included in the repository. 
 During normal development, these generated files are not intended to be tracked by Git. 
 Future developers should regenerate them from the notebook when changing model dimensions, learner count, codebook size, or execution mode.
