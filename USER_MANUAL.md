@@ -864,7 +864,11 @@ screen -r gem5_run_YYYYMMDD_HHMMSS
 ### 2. Shared folder through VirtIO 9P
 
 The script uses VirtIO 9P to share the host TiC-SAT repository with the guest
-Linux system inside gem5. Please adjust the path on your machine accordingly.
+Linux system inside gem5. 
+
+This allows generated input files, binaries, and experiment outputs to be accessed inside the guest system without rebuilding the disk image for every experiment.
+
+Please adjust the path on your machine accordingly.
 
 In the launch script, the shared folder is specified by:
 
@@ -901,6 +905,58 @@ If the executable does not have permission to run, use:
 chmod +x transformer.o
 ./transformer.o
 ```
+
+#### Implementation note: gem5 shared-folder mechanism
+
+The command-line argument added to the gem5 configuration `starter_fs.py` is:
+
+```python
+parser.add_argument(
+    "--vio-9p",
+    type=str,
+    default=None,
+    help="Path to the host directory to share via VirtIO 9P",
+)
+```
+
+The PCI device list is then constructed explicitly. The default VirtIO block device is first added for the boot disk. If the `--vio-9p` option is provided, a VirtIO 9P device is appended to the same PCI device list:
+
+```python
+my_pci_devices = [
+    PciVirtIO(vio=VirtIOBlock(image=create_cow_image(args.disk_image)))
+]
+
+if args.vio_9p:
+    vio_9p_device = VirtIO9PDiod()
+    vio_9p_device.root = args.vio_9p
+    vio_9p_device.queueSize = 128
+
+    sock_path = os.path.abspath(
+        os.path.join(m5.options.outdir, "9p.sock")
+    )
+
+    if os.path.exists(sock_path):
+        os.remove(sock_path)
+
+    vio_9p_device.socketPath = sock_path
+    my_pci_devices.append(PciVirtIO(vio=vio_9p_device))
+
+system.pci_devices = my_pci_devices
+```
+
+In this project, the related gem5 configuration can be checked in either the standalone `gem5` repository or the consolidated copy under `TiC-SAT/gem5`:
+
+```text
+gem5/configs/example/arm/starter_fs.py
+```
+
+or, inside the consolidated `TiC-SAT` repository:
+
+```text
+TiC-SAT/gem5/starter_fs.py
+```
+
+Search for `vio_9p` in `starter_fs.py` to find the shared-folder support.
 
 ---
 
